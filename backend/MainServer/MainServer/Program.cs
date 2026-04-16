@@ -1,73 +1,52 @@
-using MainServer.ExceptionHandlers;
-using MainServer.Settings;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Protocols;
-using Microsoft.IdentityModel.Protocols.OpenIdConnect;
-using Microsoft.IdentityModel.Tokens;
-using Scalar.AspNetCore;
-using System.Reflection;
+using MainServer.Initializers;
+using MainServer.Dtos.FromServer;
+using System.Net;
+
+Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
 
 var builder = WebApplication.CreateBuilder();
 
-builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
-builder.Services.AddProblemDetails();
-
-builder.Services.Configure<GoogleInfoSettings>(builder.Configuration.GetSection("Google"));
-builder.Services.Configure<TokenInfoSettings>(builder.Configuration.GetSection("Token"));
-builder.Services.Configure<SecretInfoSettings>(builder.Configuration.GetSection("Secret"));
-
-builder.Services.AddSingleton<SymmetricKeySettings>();
-
-builder.Services.AddSingleton<JsonWebTokenHandler>();
-builder.Services.AddSingleton(new ConfigurationManager<OpenIdConnectConfiguration>("https://account.google.com/.well-known/openid-configuration", new OpenIdConnectConfigurationRetriever()));
-
-builder.Services.AddSingleton<SigningCredentials>(provider =>
-{
-    var setting = provider.GetRequiredService<SymmetricKeySettings>();
-
-    return new(setting.SymmetricKey, SecurityAlgorithms.HmacSha256);
-});
-
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.MapInboundClaims = false;
-
-        options.TokenValidationParameters = new()
-        {
-            ValidateIssuer = true,
-            ValidIssuer = "https://account.google.com",
-            ValidateAudience = true,
-            ValidAudience = builder.Configuration["Google:ClientId"],
-            ValidateLifetime = true
-        };
-    });
-builder.Services.AddAuthorization();
-builder.Services.AddControllers();
-
-if (builder.Environment.IsDevelopment())
-{
-    builder.Services.AddOpenApi();
-    builder.Services.AddSwaggerGen(options =>
-    {
-        options.IncludeXmlComments(Path.Join(AppContext.BaseDirectory, $"{Assembly.GetExecutingAssembly().GetName().Name}.xml"));
-    });
-}
+builder.WebAppBuilderSet();
 
 var app = builder.Build();
 
-app.UseExceptionHandler();
+app.WebAppInit();
+await app.DbInitAsync();
 
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-    app.MapScalarApiReference();
+app.MapGet("/", () => "Index Page");
 
-    app.MapSwagger();
-    app.UseSwaggerUI();
-}
+//_ = Task.Run(async () =>
+//{
+//    Console.ReadLine();
+//    HttpClient client = new();
 
-app.MapControllers();
+//    while (true)
+//    {
+//        Console.Write(">> ");
+//        string? token = Console.ReadLine();
 
-app.Run();
+//        if (string.IsNullOrEmpty(token))
+//        {
+//            continue;
+//        }
+
+//        var res = await client.PostAsJsonAsync("http://localhost:8080/auth/google-tokentest", new { Token = token });
+
+//        Console.WriteLine(res.StatusCode);
+
+//        if (res.StatusCode != HttpStatusCode.OK)
+//            continue;
+        
+//        AuthOkTokenDto dto = await res.Content.ReadFromJsonAsync<AuthOkTokenDto>();
+
+//        client.DefaultRequestHeaders.Authorization = new("Bearer", dto.Token);
+
+//        res = await client.GetAsync("http://localhost:8080/auth/test");
+
+//        Console.WriteLine(res.StatusCode);
+
+//        Console.WriteLine(await res.Content.ReadAsStringAsync());
+//    }
+//});
+
+await app.RunAsync();

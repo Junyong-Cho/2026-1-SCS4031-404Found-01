@@ -1,10 +1,15 @@
-﻿using MainServer.Settings;
+﻿using Dapper;
+using MainServer.Dtos.FromClient;
+using MainServer.Dtos.FromServer;
+using MainServer.Infos;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 using System.Security.Claims;
 
 namespace MainServer.Controllers;
@@ -13,107 +18,200 @@ namespace MainServer.Controllers;
 /// Authentication Controller
 /// </summary>
 [ApiController]
-[Route("auth")]
+[Route("/auth")]
 public class AuthController : ControllerBase
 {
+    const string QUERY_INSERT_USER = "insert into users user_id, email values (@UserId, @Email)";
+    const string QUERY_CONFLICT_CHECK = "select exists (select 1 from users where user_id=@UserId)";
+    const string QUERY_SELECT_USER = "select user_id, email from users where user_id=@UserId";
+
     /// <summary>
-    /// 구글 ID로 로그인
+    /// 구글 계정으로 가입 API
     /// </summary>
-    /// <param name="googleInfoOpt"></param>
-    /// <param name="tokenInfoOpt"></param>
+    /// <param name="dataSource"></param>
+    /// <param name="googleInfo"></param>
     /// <param name="credentials"></param>
     /// <param name="handler"></param>
     /// <param name="configurationManager"></param>
-    /// <param name="token">요청 바디</param>
+    /// <param name="authToken"></param>
     /// <returns></returns>
-    [HttpPost("google-signin")]
-    [ProducesResponseType(typeof(TempResponseToken), StatusCodes.Status200OK)]
+    [HttpPost("google-signup")]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IResult> GoogleSignin
-        (IOptions<GoogleInfoSettings> googleInfoOpt, IOptions<TokenInfoSettings> tokenInfoOpt, SigningCredentials credentials, JsonWebTokenHandler handler, ConfigurationManager<OpenIdConnectConfiguration> configurationManager, GoogleToken token)
+    [ProducesResponseType<string>(StatusCodes.Status200OK)]
+    public async Task<IResult> GoogleSignup
+        (NpgsqlDataSource dataSource, IOptions<GoogleInfo> googleInfo, SigningCredentials credentials, JsonWebTokenHandler handler, 
+        ConfigurationManager<OpenIdConnectConfiguration> configurationManager, GoogleOAuthTokenDto authToken)
     {
         TokenValidationParameters param = new()
         {
             ValidateIssuer = true,
-            ValidIssuer = "https://account.google.com",
+            ValidIssuer = googleInfo.Value.Issuer,
             ValidateAudience = true,
-            ValidAudience = googleInfoOpt.Value.ClientId,
+            ValidAudience = googleInfo.Value.Audience,
             ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
             ConfigurationManager = configurationManager
         };
 
-        var res = await handler.ValidateTokenAsync(token.Token, param);
+        var res = await handler.ValidateTokenAsync(authToken.Token, param);
 
         if (res.IsValid == false)
             return Results.Unauthorized();
 
-        string userUnique = res.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Sub)!.Value;
-        string email = res.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Email)!.Value;
+        string userId = res.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? string.Empty;
+        string email = res.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Email)?.Value ?? string.Empty;
 
-        Claim[] claims = [new(JwtRegisteredClaimNames.Sub, userUnique), new(JwtRegisteredClaimNames.Email, email)];
+        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(email))
+            return Results.Unauthorized();
 
-        TokenInfoSettings tokenInfo = tokenInfoOpt.Value;
+        await using var dbCon = await dataSource.OpenConnectionAsync();
+        
+        bool conflict = await dbCon.QueryFirstAsync<bool>(QUERY_CONFLICT_CHECK, new { userId });
 
-        SecurityTokenDescriptor tokenDescriptor = new()
-        {
-            Subject = new(claims),
-            Issuer = tokenInfo.Issuer,
-            Audience = tokenInfo.Audience,
-            Expires = DateTime.Now.AddHours(tokenInfo.ExpireHours),
-            SigningCredentials = credentials
-        };
+        if (conflict == true)
+            return Results.Conflict();
 
-        string tokenString = handler.CreateToken(tokenDescriptor);
+        await dbCon.ExecuteAsync(QUERY_INSERT_USER, new { email });
 
-        return Results.Ok(new TempResponseToken(tokenString));
+        return Results.Ok("Signup Success");
     }
 
     /// <summary>
-    /// 구글 ID로 회원가입
+    /// 구글 계정으로 로그인 API
     /// </summary>
-    /// <param name="googleInfoOpt"></param>
     /// <param name="configurationManager"></param>
+    /// <param name="serverInfo"></param>
+    /// <param name="googleInfo"></param>
     /// <param name="handler"></param>
-    /// <param name="token"></param>
+    /// <param name="dataSource"></param>
+    /// <param name="credentials"></param>
+    /// <param name="authToken"></param>
     /// <returns></returns>
-    [HttpPost("google-signup")]
-    [ProducesResponseType(typeof(SignupComplete), StatusCodes.Status200OK)]
-    public async Task<IResult> GoogleSignup
-        (IOptions<GoogleInfoSettings> googleInfoOpt, ConfigurationManager<OpenIdConnectConfiguration> configurationManager, JsonWebTokenHandler handler, GoogleToken token)
+    [HttpPost("google-signin")]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<AuthOkTokenDto>(StatusCodes.Status200OK)]
+    public async Task<IResult> GoogleSignin
+        (ConfigurationManager<OpenIdConnectConfiguration> configurationManager, IOptions<ServerInfo> serverInfo, IOptions<GoogleInfo> googleInfo,
+         JsonWebTokenHandler handler, NpgsqlDataSource dataSource, SigningCredentials credentials, GoogleOAuthTokenDto authToken)
     {
         TokenValidationParameters param = new()
         {
             ValidateIssuer = true,
-            ValidIssuer = "https://account.google.com",
+            ValidIssuer = googleInfo.Value.Issuer,
             ValidateAudience = true,
-            ValidAudience = googleInfoOpt.Value.ClientId,
+            ValidAudience = googleInfo.Value.Audience,
+            ValidateIssuerSigningKey = true,
+            ValidateLifetime = true,
             ConfigurationManager = configurationManager
         };
 
-        var res = await handler.ValidateTokenAsync(token.Token, param);
-        
-        string userUnique = res.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Sub)!.Value;
-        string email = res.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Email)!.Value;
+        var res = await handler.ValidateTokenAsync(authToken.Token, param);
 
-        return Results.Ok(new SignupComplete(userUnique, email));
+        if (res.IsValid == false)
+            return Results.Unauthorized();
+
+        string userId = res.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? string.Empty;
+        string email = res.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Email)?.Value ?? string.Empty;
+
+        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(email))
+            return Results.Unauthorized();
+
+        await using var dbCon = await dataSource.OpenConnectionAsync();
+
+        UserDto? user = await dbCon.QueryFirstOrDefaultAsync<UserDto>(QUERY_SELECT_USER, new { userId });
+
+        if (user.HasValue == false)
+            return Results.Unauthorized();
+
+        if (user.Value.UserId != userId || user.Value.Email != email)
+            return Results.Unauthorized();
+
+        SecurityTokenDescriptor descriptor = new()
+        {
+            Subject = new([new(JwtRegisteredClaimNames.Sub, userId), new(JwtRegisteredClaimNames.Email, email)]),
+            Issuer = serverInfo.Value.Issuer,
+            Audience = serverInfo.Value.Audience,
+            Expires = DateTime.Now.AddMinutes(serverInfo.Value.ExpireHours),
+            SigningCredentials = credentials
+        };
+
+        string tokenString = handler.CreateToken(descriptor);
+
+        AuthOkTokenDto responseToken = new()
+        {
+            Token = tokenString
+        };
+
+        return Results.Ok(responseToken);
+    }
+
+    /// <summary>
+    /// 인증 Audience 없을 때 일단 검증
+    /// </summary>
+    /// <param name="credentials"></param>
+    /// <param name="serverInfo"></param>
+    /// <param name="googleInfo"></param>
+    /// <param name="handler"></param>
+    /// <param name="configurationManager"></param>
+    /// <param name="authToken"></param>
+    /// <returns></returns>
+    [HttpPost("google-tokentest")]
+    public async Task<IResult> TestTokenValidate
+        (SigningCredentials credentials, IOptions<ServerInfo> serverInfo, IOptions<GoogleInfo> googleInfo, JsonWebTokenHandler handler, 
+        ConfigurationManager<OpenIdConnectConfiguration> configurationManager, GoogleOAuthTokenDto authToken)
+    {
+        Console.WriteLine(googleInfo.Value.Issuer);
+
+        TokenValidationParameters param = new()
+        {
+            ValidateIssuer = true,
+            ValidIssuer = googleInfo.Value.Issuer,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ConfigurationManager = configurationManager
+        };
+
+        var res = await handler.ValidateTokenAsync(authToken.Token, param);
+
+        if (res.IsValid == false)
+            return Results.Unauthorized();
+
+        string userId = res.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? string.Empty;
+        string email = res.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Email)?.Value ?? string.Empty;
+
+        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(email))
+            return Results.Unauthorized();
+
+        SecurityTokenDescriptor descriptor = new()
+        {
+            Subject = new([new(JwtRegisteredClaimNames.Sub, userId), new(JwtRegisteredClaimNames.Email, email)]),
+            Issuer = serverInfo.Value.Issuer,
+            Audience = serverInfo.Value.Audience,
+            Expires = DateTime.Now.AddMinutes(serverInfo.Value.ExpireHours),
+            SigningCredentials = credentials
+        };
+
+        string token = handler.CreateToken(descriptor);
+
+        return Results.Ok(new { Token = token });
+    }
+
+    /// <summary>
+    /// 인증 테스트
+    /// </summary>
+    /// <returns></returns>
+    [Authorize]
+    [HttpGet("test")]
+    [ProducesResponseType<string>(StatusCodes.Status200OK)]
+    public IResult AuthenticationTest()
+    {
+        string userId = User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? string.Empty;
+        string email = User.FindFirstValue(JwtRegisteredClaimNames.Email) ?? string.Empty;
+
+        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(email))
+            return Results.Ok("뭔가 안 됨");
+
+        return Results.Ok($"{email}");
     }
 }
-
-/// <summary>
-/// 로그인 요청 토큰
-/// </summary>
-/// <param name="Token"></param>
-public record GoogleToken(string Token);
-
-/// <summary>
-/// 임시 로그인 토큰 반환 DTO
-/// </summary>
-/// <param name="Token"></param>
-public record TempResponseToken(string Token);
-
-/// <summary>
-/// 임시 회원가입 반환 DTO
-/// </summary>
-/// <param name="UserUnique"></param>
-/// <param name="Email"></param>
-public record SignupComplete(string UserUnique, string Email);
