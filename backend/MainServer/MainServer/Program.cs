@@ -1,5 +1,5 @@
-using MainServer.Initializers;
 using MainServer.Dtos.FromServer;
+using MainServer.Initializers;
 using System.Net;
 
 Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
@@ -22,7 +22,7 @@ app.MapGet("/", () => "Index Page");
 
 //    while (true)
 //    {
-//        Console.Write(">> ");
+//        Console.Write("Token >> ");
 //        string? token = Console.ReadLine();
 
 //        if (string.IsNullOrEmpty(token))
@@ -30,18 +30,18 @@ app.MapGet("/", () => "Index Page");
 //            continue;
 //        }
 
-//        var res = await client.PostAsJsonAsync("http://localhost:8080/auth/google-tokentest", new { Token = token });
+//        var res = await client.PostAsJsonAsync("http://localhost:8080/test/google-tokentest", new { Token = token });
 
 //        Console.WriteLine(res.StatusCode);
 
 //        if (res.StatusCode != HttpStatusCode.OK)
 //            continue;
-        
+
 //        AuthOkTokenDto dto = await res.Content.ReadFromJsonAsync<AuthOkTokenDto>();
 
 //        client.DefaultRequestHeaders.Authorization = new("Bearer", dto.Token);
 
-//        res = await client.GetAsync("http://localhost:8080/auth/test");
+//        res = await client.GetAsync("http://localhost:8080/test/test");
 
 //        Console.WriteLine(res.StatusCode);
 

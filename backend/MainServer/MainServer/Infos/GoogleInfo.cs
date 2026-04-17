@@ -16,9 +16,4 @@ public class GoogleInfo
     /// 구글 토큰 Audience
     /// </summary>
     public string Audience { get; set; } = null!;
-
-    /// <summary>
-    /// OAuth 클라이언트 암호
-    /// </summary>
-    public string ClientSecret { get; set; } = null!;
 }
