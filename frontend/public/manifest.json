@@ -18,7 +18,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/*"],
-      "js": ["assets/content.js"]
+      "js": ["assets/injector.js"]
     }
   ]
 }
