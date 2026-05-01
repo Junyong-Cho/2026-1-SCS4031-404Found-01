@@ -125,23 +125,26 @@ chrome.runtime.onMessage.addListener((msg) => {
       const config = getConfig();
       document.querySelectorAll(`${config.container}[data-lc-id]`).forEach((container) => {
         const lcId = container.getAttribute("data-lc-id");
-        if (processedIds.has(lcId)) return;
 
-        const commentEl = container.querySelector(config.comment);
-        if (commentEl) {
-          applyBlurAndSkeleton(container, config);
-          commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
-          processedIds.add(lcId);
+        if (cleanCache.has(lcId)) {
+          // 캐시 있으면 API 재요청 없이 바로 렌더링
+          const cached = cleanCache.get(lcId);
+          renderCleanResult(cached, container, config);
+        } else if (!processedIds.has(lcId)) {
+          // 캐시 없는 것만 새로 요청
+          const commentEl = container.querySelector(config.comment);
+          if (commentEl) {
+            applyBlurAndSkeleton(container, config);
+            commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
+            processedIds.add(lcId);
+          }
         }
       });
 
       initObservation();
     } else {
-      // 일반모드: 모든 댓글 원본 복원
       console.log("[일반모드 전환 - 복원 시작]");
-      const config = getConfig();
-      console.log("[config 확인]", config);
-      restoreAllComments(config);
+      restoreAllComments(getConfig());
     }
   }
 });
