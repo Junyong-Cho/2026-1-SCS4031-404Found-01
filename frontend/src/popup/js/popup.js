@@ -118,10 +118,35 @@ document.addEventListener("DOMContentLoaded", () => {
     r.addEventListener("change", (e) => chrome.storage.local.set({ filterStep: e.target.value })),
   );
 
-  /** 메인 토글 스위치 변경 시 서비스 활성화 상태 저장 */
+  /**
+   * 메인 토글 스위치 변경 시 서비스 활성화 상태를 저장하고
+   * 현재 활성화된 유튜브 탭에 상태 변경 메시지를 전송
+   */
   mainToggle.addEventListener("change", (e) => {
-    chrome.storage.local.set({ serviceActive: e.target.checked });
-    updateModeUI(e.target.checked);
+    const isActive = e.target.checked;
+
+    // 1. 크롬 로컬 저장소에 현재 ON/OFF 상태 기록
+    chrome.storage.local.set({ serviceActive: isActive });
+
+    // 2. 팝업창 테마 및 텍스트 UI 업데이트 (일반모드 <-> 클린모드)
+    updateModeUI(isActive);
+
+    // 3. 현재 활성화된 탭(유튜브)을 찾아 실시간 상태 변경 신호 전송
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+      // 탭이 존재하고 유튜브 URL인 경우에만 메시지 전송
+      if (tabs[0] && tabs[0].url?.includes("youtube.com")) {
+        chrome.tabs.sendMessage(
+          tabs[0].id,
+          {
+            action: "TOGGLE_SERVICE",
+            active: isActive,
+          },
+          (response) => {
+            console.log("[토글 메시지 전송 결과]", response, chrome.runtime.lastError?.message);
+          },
+        );
+      }
+    });
   });
 
   /** 레이블(텍스트) 클릭으로도 토글 조작 가능하도록 설정 */

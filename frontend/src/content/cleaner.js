@@ -10,22 +10,16 @@ export const cleanCache = new Map();
  * 유튜브 DOM 선택자 설정
  */
 export const YOUTUBE_CONFIG = {
-  container: "ytd-comment-view-model", // 댓글 전체 모델 (MutationObserver 타겟)
-  comment: "#content-text", // 블러(Blur) 필터를 걸 타겟 요소
-  commentSpan: "#content-text .ytAttributedStringHost", // 실제 텍스트가 들어있는 span
-  avatarWrapper: "yt-img-shadow", // 정화 완료 배지(오렌지 점)를 붙일 위치
-  link: "#published-time-text a", // lc(댓글 고유 ID) 파라미터가 포함된 링크
+  container: "ytd-comment-view-model",
+  comment: "#content-text",
+  commentSpan: "#content-text span.ytAttributedStringHost",
+  avatarWrapper: "#author-thumbnail yt-img-shadow",
+  link: "#published-time-text a",
 };
 
-/**
- * 현재 접속한 유튜브 페이지의 레이아웃 타입을 판별하여 적절한 설정(Config) 반환
- */
 export function getConfig() {
-  return !!document.querySelector(YOUTUBE_CONFIG.desktop.container)
-    ? YOUTUBE_CONFIG.desktop
-    : YOUTUBE_CONFIG.responsive;
+  return YOUTUBE_CONFIG;
 }
-
 /**
  * 댓글 작성 시간 링크(href)에서 유튜브 댓글의 고유 식별자인 'lc' 값을 추출
  * @param {string} href - 댓글 작성 시간 요소의 링크 주소
@@ -55,6 +49,9 @@ export function extractLcId(href) {
  * @param {Object} config - 현재 환경 설정 객체
  */
 export function applyBlurAndSkeleton(containerEl, config) {
+  const commentBody = containerEl.querySelector(config.comment);
+  console.log("[블러 대상 요소]", commentBody); // ← 추가
+  console.log("[config.comment 선택자]", config.comment); // ← 추가
   const lcId = containerEl.getAttribute("data-lc-id");
   console.log(`[스켈레톤 적용 시도] ID: ${lcId}`);
 
@@ -66,7 +63,6 @@ export function applyBlurAndSkeleton(containerEl, config) {
   }
 
   // 초기 상태: 댓글 본문 블러 처리
-  const commentBody = containerEl.querySelector(config.comment);
   if (commentBody) {
     commentBody.classList.add("comment-seeding-blur");
     console.log("[블러 적용 완료]");
@@ -94,13 +90,24 @@ export function renderCleanResult(result, container, config) {
 
   // 응답이 왔으므로 스켈레톤 UI 제거
   if (skeleton) skeleton.remove();
+
+  // 매 렌더링 전 배지 초기화 (단계 변경 시 이전 배지 제거)
+  const existingBadge = container.querySelector(".laundry-clean-badge");
+  if (existingBadge) existingBadge.remove();
+
   if (!commentBody || !commentSpan) return;
+
+  // 원본 텍스트 최초 1회 저장
+  if (!container.dataset.originalText) {
+    container.dataset.originalText = commentSpan.textContent;
+  }
 
   if (result.isToxic) {
     // 2단계(Humor) 또는 3단계(Refined)인 경우 텍스트 교체 및 배지 삽입
     if (result.convertedText && (result.filterStep === "2" || result.filterStep === "3")) {
       commentSpan.textContent = result.convertedText; // 순화된 텍스트로 교체
       commentBody.classList.remove("comment-seeding-blur"); // 블러 해제
+      commentBody.classList.remove("comment-seeding-blur");
       injectCleanBadge(container, config); // 아바타에 주황색 점 표시
     } else {
       // 1단계(Blur)인 경우 클릭하면 내용이 보이는 UI 설정
@@ -110,6 +117,25 @@ export function renderCleanResult(result, container, config) {
     // 악플이 아닌 경우 블러 제거
     commentBody.classList.remove("comment-seeding-blur");
   }
+}
+
+// 일반모드 복원 함수 추가
+export function restoreAllComments(config) {
+  document.querySelectorAll("[data-lc-id]").forEach((container) => {
+    const commentSpan = container.querySelector(config.commentSpan);
+    const commentBody = container.querySelector(config.comment);
+    const badge = container.querySelector(".laundry-clean-badge");
+    const skeleton = container.querySelector(".laundry-loading-skeleton");
+
+    if (skeleton) skeleton.remove();
+    if (badge) badge.remove();
+    if (commentBody) commentBody.classList.remove("comment-seeding-blur");
+
+    // 원본 텍스트 복원
+    if (commentSpan && container.dataset.originalText) {
+      commentSpan.textContent = container.dataset.originalText;
+    }
+  });
 }
 
 /**
@@ -143,10 +169,10 @@ export async function renderCleanResults(data) {
 export function injectCleanBadge(container, config) {
   if (container.querySelector(".laundry-clean-badge")) return;
 
-  const avatarWrapper = container.querySelector(config.avatarWrapper);
-  if (!avatarWrapper) return;
+  const authorThumbnail = container.querySelector("#author-thumbnail");
+  if (!authorThumbnail) return;
 
-  avatarWrapper.style.position = "relative";
+  authorThumbnail.style.position = "relative";
 
   const badge = document.createElement("span");
   badge.className = "laundry-clean-badge";
@@ -158,23 +184,25 @@ export function injectCleanBadge(container, config) {
     height: "8px",
     backgroundColor: "orange",
     borderRadius: "50%",
-    zIndex: "10",
+    zIndex: "9999",
     pointerEvents: "none",
+    display: "block",
   });
-  avatarWrapper.appendChild(badge);
+  authorThumbnail.appendChild(badge);
 }
-
 /**
  * 1단계(Blur) 처리된 댓글에 클릭 이벤트 리스너를 추가하여 클릭 시 내용을 볼 수 있게 함
  */
 export function setupBlurUI(element) {
   element.classList.add("comment-seeding-blur");
   element.style.cursor = "pointer";
+  element.title = "클릭하여 원본 보기";
   element.onclick = (e) => {
     e.preventDefault();
     element.classList.remove("comment-seeding-blur");
-    element.onclick = null; // 이벤트 1회성 소모
+    element.onclick = null;
     element.style.cursor = "";
+    element.title = "";
   };
 }
 
@@ -185,7 +213,7 @@ export function setupBlurUI(element) {
 export function updateLaundryStats(stats) {
   chrome.storage.local.get(["totalComments", "toxicComments"], (res) => {
     const newTotal = (res.totalComments || 0) + (stats.totalScanned || 0);
-    const newToxic = (res.toxicComments || 0) + (stats.sessionToxicCount || 0);
+    const newToxic = (res.toxicComments || 0) + (stats.toxicCount || 0);
 
     chrome.storage.local.set({ totalComments: newTotal, toxicComments: newToxic }, () => {
       // 팝업 창에 현재 세션 통계 전송 (팝업이 열려 있을 경우 즉시 반영)

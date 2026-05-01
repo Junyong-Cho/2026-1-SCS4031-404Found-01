@@ -1,117 +1,94 @@
 // src/content/injector.js
 import {
-  cleanCache,
   getConfig,
   extractLcId,
   applyBlurAndSkeleton,
   renderCleanResults,
-  updateLaundryStats,
+  renderCleanResult,
+  restoreAllComments,
+  cleanCache,
 } from "./cleaner.js";
+import "./injector.css";
 
-console.log("댓글세탁소 injector loaded");
-
-// ── 전역 상태 관리 ──────────────────────────────────────────────
-
-/**
- * 서버로 전송하기 전 댓글 데이터를 일시적으로 보관하는 대기열
- * @type {Array<{id: string, text: string}>}
- */
 let commentQueue = [];
-
-/**
- * 중복 요청을 방지하기 위해 이미 처리 프로세스에 진입한 댓글 ID를 저장하는 집합
- * @type {Set<string>}
- */
 const processedIds = new Set();
-
-/**
- * 사용자의 시선 체류 시간을 측정하기 위해 각 댓글 요소별 타이머를 관리하는 맵
- * @type {Map<HTMLElement, number>}
- */
 const observationTimers = new Map();
 
-// ── 큐 관리 및 서버 통신 ──────────────────────────────────────────
-
 /**
- * 큐에 쌓인 댓글들을 취합하여 백엔드 서버로 전송하고 결과를 받아 렌더링을 지시
- * @async
- * @returns {Promise<void>}
+ * [핵심] 큐 처리 로직 (설정에 따라 분기)
  */
 const flushQueue = async () => {
-  if (commentQueue.length === 0) return;
+  const settings = await chrome.storage.local.get(["serviceActive", "filterStep"]);
+  if (!settings.serviceActive || commentQueue.length === 0) return;
 
-  // 1. 유저의 현재 정화 단계 설정 값 가져오기
-  const { filterStep = "1" } = await chrome.storage.local.get("filterStep");
-  const userSettingMap = { 1: "blur", 2: "humor", 3: "refine" };
-  const currentSetting = userSettingMap[filterStep] || "blur";
-
-  // 2. 서버가 기대하는 최종 데이터 구조(JSON) 생성
+  const stepMap = { 1: "blur", 2: "humor", 3: "refine" };
   const payload = {
-    userSetting: currentSetting,
-    comments: commentQueue.map((c) => ({
-      id: String(c.id),
-      text: String(c.text),
-    })),
+    userSetting: stepMap[settings.filterStep] || "blur",
+    comments: commentQueue.map((c) => ({ id: String(c.id), text: String(c.text) })),
   };
 
-  console.log("[최종 전송 구조]:", JSON.stringify(payload, null, 2));
-
-  // 전송 시작과 동시에 큐를 비워 중복 전송 방지
   commentQueue = [];
 
-  // Background Script로 데이터 전송 및 응답 수신
-  chrome.runtime.sendMessage({ type: "PROCESS_COMMENTS", data: payload }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error("통신 오류:", chrome.runtime.lastError.message);
-      return;
-    }
+  console.log("[서버 전송 payload]", JSON.stringify(payload, null, 2));
 
-    if (response && response.results) {
-      console.log("[서버 실제 응답 데이터]:", JSON.stringify(response, null, 2));
-      renderCleanResults(response);
-    } else {
-      console.warn("⚠️ 서버에서 결과를 받았으나 results가 비어있음:", response);
+  chrome.runtime.sendMessage({ type: "PROCESS_COMMENTS", data: payload }, (response) => {
+    console.log("[서버 응답 raw]", response);
+    if (chrome.runtime.lastError) {
+      console.error("[sendMessage 에러]", chrome.runtime.lastError.message);
     }
+    if (response?.results) renderCleanResults(response);
   });
 };
 
-// ── 관찰자 설정 (Intersection & Mutation) ──────────────────────────
+/**
+ * [핵심] 댓글 감지 및 데이터 추출
+ */
+function initObservation() {
+  const config = getConfig();
+  if (!config) return;
+
+  const newContainers = document.querySelectorAll(`${config.container}:not([data-observed])`);
+
+  newContainers.forEach((container) => {
+    const linkEl = container.querySelector(config.link);
+    const lcId = extractLcId(linkEl?.getAttribute("href"));
+
+    if (lcId) {
+      container.setAttribute("data-lc-id", lcId);
+      container.setAttribute("data-observed", "true");
+      commentObserver.observe(container); // 화면 노출 감지 시작
+    }
+  });
+}
 
 /**
- * 댓글이 화면에 노출되는지 감지하고, 0.8초 이상 머물 경우에만 정화 큐에 추가
- * @type {IntersectionObserver}
+ * [핵심] 화면 체류 감지 (0.8초)
  */
 const commentObserver = new IntersectionObserver(
   (entries) => {
-    entries.forEach((entry) => {
-      const target = entry.target;
-      const lcId = target.getAttribute("data-lc-id");
-
+    entries.forEach(async (entry) => {
       if (entry.isIntersecting) {
-        // 화면 노출 시 타이머 시작 (단순 스크롤 통과는 무시하기 위함)
-        const timer = setTimeout(() => {
+        const target = entry.target;
+        const lcId = target.getAttribute("data-lc-id");
+
+        const timer = setTimeout(async () => {
+          const { serviceActive } = await chrome.storage.local.get("serviceActive");
+          if (!serviceActive || processedIds.has(lcId)) return;
+
           const config = getConfig();
-          if (lcId && !processedIds.has(lcId)) {
-            const commentEl = target.querySelector(config.comment);
-            if (commentEl) {
-              console.log(`[실제 타겟 발견] 큐에 넣습니다: ${lcId}`);
-
-              // 서버 응답 전 즉시 UI 처리 (블러 및 스켈레톤)
-              applyBlurAndSkeleton(target, config);
-
-              // 큐에 데이터 삽입 및 중복 처리 마킹
-              commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
-              processedIds.add(lcId);
-            }
+          const commentEl = target.querySelector(config.comment);
+          if (commentEl) {
+            applyBlurAndSkeleton(target, config); // 로딩 UI 적용
+            commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
+            processedIds.add(lcId);
           }
         }, 800);
         observationTimers.set(target, timer);
       } else {
-        // 화면에서 벗어나면 대기 중인 타이머 취소
-        const timer = observationTimers.get(target);
+        const timer = observationTimers.get(entry.target);
         if (timer) {
           clearTimeout(timer);
-          observationTimers.delete(target);
+          observationTimers.delete(entry.target);
         }
       }
     });
@@ -120,40 +97,75 @@ const commentObserver = new IntersectionObserver(
 );
 
 /**
- * 1.5초 간격으로 flushQueue를 실행하여 대기열의 댓글들을 배치 처리
+ * [시작점] 에러 방지용 안전 초기화
  */
+const startService = async () => {
+  const config = getConfig();
+  if (!config || !config.container) {
+    setTimeout(startService, 200); // 0.2초 후 재시도
+    return;
+  }
+
+  const { serviceActive } = await chrome.storage.local.get("serviceActive");
+  if (serviceActive) initObservation();
+
+  // 유튜브의 동적 댓글 로딩 감시
+  const domObserver = new MutationObserver(initObservation);
+  domObserver.observe(document.body, { childList: true, subtree: true });
+};
+
+// TOGGLE_SERVICE 메시지 수신 핸들러
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.action === "TOGGLE_SERVICE") {
+    if (msg.active) {
+      // 클린모드: 이미 본 댓글도 재처리 위해 초기화
+      processedIds.clear();
+
+      // 이미 화면에 보이는 댓글 즉시 처리
+      const config = getConfig();
+      document.querySelectorAll(`${config.container}[data-lc-id]`).forEach((container) => {
+        const lcId = container.getAttribute("data-lc-id");
+        if (processedIds.has(lcId)) return;
+
+        const commentEl = container.querySelector(config.comment);
+        if (commentEl) {
+          applyBlurAndSkeleton(container, config);
+          commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
+          processedIds.add(lcId);
+        }
+      });
+
+      initObservation();
+    } else {
+      // 일반모드: 모든 댓글 원본 복원
+      console.log("[일반모드 전환 - 복원 시작]");
+      const config = getConfig();
+      console.log("[config 확인]", config);
+      restoreAllComments(config);
+    }
+  }
+});
+
+// 단계 변경 감지
+chrome.storage.onChanged.addListener((changes) => {
+  if (!changes.filterStep) return;
+
+  const newStep = changes.filterStep.newValue;
+  const config = getConfig();
+
+  // 캐시에 있는 모든 댓글을 새 단계로 재렌더링
+  document.querySelectorAll("[data-lc-id]").forEach((container) => {
+    const lcId = container.getAttribute("data-lc-id");
+    const cached = cleanCache.get(lcId);
+    if (!cached) return;
+
+    cached.filterStep = newStep; // 단계 업데이트
+    renderCleanResult(cached, container, config);
+  });
+});
+
+// 1.5초 주기로 서버 전송
 setInterval(flushQueue, 1500);
 
-/**
- * 유튜브의 동적 로딩된 댓글 요소들을 찾아 고유 ID를 부여하고 관찰 대상에 등록
- * @returns {void}
- */
-function initObservation() {
-  const config = getConfig();
-  const selector = `${config.container}:not([data-observed])`;
-  const newContainers = document.querySelectorAll(selector);
-
-  newContainers.forEach((container) => {
-    const linkEl = container.querySelector(config.link);
-    const lcId = extractLcId(linkEl?.getAttribute("href"));
-
-    if (lcId) {
-      // DOM 요소에 메타데이터 마킹
-      container.setAttribute("data-lc-id", lcId);
-      container.setAttribute("data-observed", "true");
-
-      // 시각적 노출 여부 관찰 시작
-      commentObserver.observe(container);
-    }
-  });
-}
-
-/**
- * 페이지 내 DOM 변화를 감시하여 새로운 댓글이 추가될 때마다 초기화 로직 수행
- * @type {MutationObserver}
- */
-const domObserver = new MutationObserver(initObservation);
-domObserver.observe(document.body, { childList: true, subtree: true });
-
-// 스크립트 로드 시 즉시 1회 실행
-initObservation();
+// 즉시 실행
+startService();
