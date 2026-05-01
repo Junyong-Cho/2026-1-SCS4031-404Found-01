@@ -109,17 +109,16 @@ export function renderCleanResult(result, container, config) {
       commentBody.classList.remove("comment-seeding-blur"); // 블러 해제
       commentBody.classList.remove("comment-seeding-blur");
       injectCleanBadge(container, config); // 아바타에 주황색 점 표시
-    } else {
-      // 1단계(Blur)인 경우 클릭하면 내용이 보이는 UI 설정
+      injectFeedbackButton(container, result); // 피드백 버튼 주입
+    } else if (result.filterStep === "1") {
       setupBlurUI(commentBody);
     }
   } else {
-    // 악플이 아닌 경우 블러 제거
     commentBody.classList.remove("comment-seeding-blur");
   }
 }
 
-// 일반모드 복원 함수 추가
+// 일반모드 복원 함수
 export function restoreAllComments(config) {
   document.querySelectorAll("[data-lc-id]").forEach((container) => {
     const commentSpan = container.querySelector(config.commentSpan);
@@ -137,6 +136,44 @@ export function restoreAllComments(config) {
     }
   });
 }
+
+/**
+ * 의견 보내기 버튼을 생성하고 주입하는 함수
+ */
+function injectFeedbackButton(container, result) {
+  // 중복 생성 방지
+  if (container.querySelector(".laundry-feedback-btn")) return;
+
+  const headerAuthor = container.querySelector("#header-author");
+  if (!headerAuthor) return;
+
+  const feedbackBtn = document.createElement("button");
+  feedbackBtn.className = "laundry-feedback-btn";
+  feedbackBtn.innerText = "의견 보내기";
+  feedbackBtn.title = "정화 결과가 부적절한가요?";
+
+  // 클릭 이벤트: 피드백 폼 열기 또는 서버 전송
+  feedbackBtn.onclick = () => {
+    const feedbackReason = prompt("의견을 남겨주세요 (예: 오탐지, 순화 어색함 등):");
+    if (feedbackReason) {
+      sendFeedbackToServer(result.id, feedbackReason);
+      alert("감사합니다! 의견이 접수되었습니다.");
+      feedbackBtn.remove(); // 접수 후 버튼 제거
+    }
+  };
+
+  headerAuthor.appendChild(feedbackBtn);
+}
+
+// /**
+//  * 서버로 피드백 데이터를 전송하는 함수
+//  */
+// function sendFeedbackToServer(commentId, reason) {
+//   chrome.runtime.sendMessage({
+//     type: "SEND_FEEDBACK",
+//     data: { id: commentId, reason: reason },
+//   });
+// }
 
 /**
  * 서버에서 넘어온 다수의 댓글 정화 결과 리스트를 순회하며 렌더링 지시
