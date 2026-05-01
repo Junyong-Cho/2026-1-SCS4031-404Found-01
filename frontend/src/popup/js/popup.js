@@ -1,44 +1,39 @@
+// src/popup/js/popup.js
+
 import { updateModeUI, updateStatisticsUI, showToast } from "./utils.js";
 import { addTag, saveKeywords } from "./keywords.js";
 
+/**
+ * 팝업 창이 로드될 때 실행되는 메인 초기화 로직
+ */
 document.addEventListener("DOMContentLoaded", () => {
-  // DOM 요소 선택
-  const stepRadios = document.querySelectorAll('input[name="filterStep"]');
-  const mainToggle = document.getElementById("service-onoff");
-  const modeGeneralLabel = document.getElementById("mode-general");
-  const modeCleanLabel = document.getElementById("mode-clean");
-  const keywordInput = document.getElementById("keyword-input");
-  const addKeywordBtn = document.getElementById("add-keyword");
-  const keywordTagsContainer = document.getElementById("keyword-tags");
-  const logoutBtn = document.getElementById("btn-logout");
-  const userEmailElem = document.getElementById("user-email");
-  const userInfoBar = document.getElementById("user-info-bar");
+  // --- 1. DOM 요소 선택 ---
+  const stepRadios = document.querySelectorAll('input[name="filterStep"]'); // 1/2/3단계 라디오 버튼
+  const mainToggle = document.getElementById("service-onoff"); // 전체 서비스 ON/OFF 토글
+  const modeGeneralLabel = document.getElementById("mode-general"); // '일반' 모드 레이블
+  const modeCleanLabel = document.getElementById("mode-clean"); // '세탁' 모드 레이블
+  const keywordInput = document.getElementById("keyword-input"); // 키워드 입력창
+  const addKeywordBtn = document.getElementById("add-keyword"); // 키워드 추가 버튼
+  const keywordTagsContainer = document.getElementById("keyword-tags"); // 추가된 키워드 태그가 담길 컨테이너
+  const logoutBtn = document.getElementById("btn-logout"); // 로그아웃 버튼
+  const userEmailElem = document.getElementById("user-email"); // 유저 이메일 표시 영역
+  const userInfoBar = document.getElementById("user-info-bar"); // 유저 정보 표시 바
 
-  // export const testRes = {
-  //   filterStep: "3",
-  //   serviceActive: true,
-  //   personalKeywords: ["주작", "광고", "어그로"],
-  //   userEmail: "cleaner@example.com",
-  //   isLoggedIn: true,
-  // };
-
-  // 1. 초기 데이터 로드
+  // --- 2. 초기 데이터 로드 (저장소에서 설정 및 통계 정보 가져오기) ---
   chrome.storage.local.get(
     ["filterStep", "serviceActive", "personalKeywords", "userEmail", "isLoggedIn", "totalComments", "toxicComments"],
     (res) => {
-      // res = testRes; // 테스트
-
-      // 필터 단계 설정
+      // (1) 이전에 설정한 정화 단계(1, 2, 3) 라디오 버튼 복구
       if (res.filterStep) {
         const targetRadio = document.querySelector(`input[value="${res.filterStep}"]`);
         if (targetRadio) targetRadio.checked = true;
       }
 
-      // 서비스 온오프 및 모드 UI
+      // (2) 서비스 활성화 상태 및 UI 테마 업데이트
       if (res.serviceActive !== undefined) mainToggle.checked = res.serviceActive;
       updateModeUI(mainToggle.checked);
 
-      // 로그인 상태 처리
+      // (3) 로그인 상태에 따른 UI 분기 (이메일 노출 및 입력창 상태 제어)
       if (res.isLoggedIn) {
         userInfoBar.style.display = "flex";
         userEmailElem.innerText = res.userEmail || "";
@@ -48,7 +43,7 @@ document.addEventListener("DOMContentLoaded", () => {
         keywordInput.placeholder = "클릭하여 로그인 후 이용";
       }
 
-      // 통계 및 키워드 로드
+      // (4) 정화 통계 리포트 및 개인 차단 키워드 태그 생성
       updateStatisticsUI(res.totalComments || 0, res.toxicComments || 0);
       if (res.personalKeywords) {
         keywordTagsContainer.innerHTML = "";
@@ -57,8 +52,9 @@ document.addEventListener("DOMContentLoaded", () => {
     },
   );
 
-  // --- 이벤트 핸들러 ---
+  // --- 3. 이벤트 핸들러 및 인증 로직 ---
 
+  /** 로그인 필요 안내 및 로그인 프로세스 시작 */
   function handleLoginRequired(e) {
     e.preventDefault();
     if (confirm("맞춤 키워드 설정은 로그인이 필요합니다.\n구글 로그인을 진행하시겠습니까?")) {
@@ -66,25 +62,25 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // 입력창 클릭 시 로그인 체크
+  /** 비로그인 상태로 키워드창 클릭 시 로그인 유도 */
   keywordInput.addEventListener("mousedown", (e) => {
     chrome.storage.local.get(["isLoggedIn"], (res) => {
       if (!res.isLoggedIn) handleLoginRequired(e);
     });
   });
 
-  // 키워드 추가
+  /** 차단 키워드 추가 처리 (중복 검사 및 로그인 체크 포함) */
   const processAddKeyword = () => {
-    chrome.storage.local.get(["isLoggedIn"], (res) => {
+    chrome.storage.local.get(["isLoggedIn", "personalKeywords"], (res) => {
       if (!res.isLoggedIn) {
         handleLoginRequired(new Event("click"));
         return;
       }
       const keyword = keywordInput.value.trim();
 
-      if (!keyword) return; // 빈 칸이면 무시
+      if (!keyword) return;
 
-      // 기존 키워드 리스트에서 중복 확인
+      // 중복 등록 방지 로직
       const currentKeywords = res.personalKeywords || [];
       if (currentKeywords.includes(keyword)) {
         showToast("이미 등록된 키워드입니다.");
@@ -92,7 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // 중복이 아닐 때만 추가
+      // 태그 UI 추가 및 저장소 업데이트
       addTag(keyword, keywordTagsContainer);
       keywordInput.value = "";
       saveKeywords(keywordTagsContainer);
@@ -104,27 +100,31 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Enter") processAddKeyword();
   });
 
-  // 로그아웃
+  /** 로그아웃 버튼 클릭 핸들러 */
   logoutBtn.addEventListener("click", () => {
     if (!confirm("로그아웃 하시겠습니까?")) return;
     chrome.runtime.sendMessage({ action: "requestLogout" }, (response) => {
       if (response?.status === "success") {
         showToast("로그아웃 되었습니다.");
-        window.location.reload();
+        window.location.reload(); // UI 갱신을 위한 새로고침
       }
     });
   });
 
-  // 기타 UI 설정 변경 이벤트
+  // --- 4. 사용자 설정 변경 감지 및 저장 ---
+
+  /** 정화 단계 라디오 버튼 변경 시 저장 */
   stepRadios.forEach((r) =>
     r.addEventListener("change", (e) => chrome.storage.local.set({ filterStep: e.target.value })),
   );
 
+  /** 메인 토글 스위치 변경 시 서비스 활성화 상태 저장 */
   mainToggle.addEventListener("change", (e) => {
     chrome.storage.local.set({ serviceActive: e.target.checked });
     updateModeUI(e.target.checked);
   });
 
+  /** 레이블(텍스트) 클릭으로도 토글 조작 가능하도록 설정 */
   [modeGeneralLabel, modeCleanLabel].forEach((label) => {
     label.addEventListener("click", () => {
       const targetState = label === modeCleanLabel;
@@ -135,9 +135,17 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // 메시지 리스너
+  // --- 5. 외부 메시지 수신 (백그라운드 등으로부터) ---
   chrome.runtime.onMessage.addListener((msg) => {
+    // 로그인 취소 알림
     if (msg.action === "loginCancelled") showToast("로그인이 취소되었습니다.");
+
+    // 로그인 완료 시 팝업 갱신
     if (msg.action === "loginFinished") window.location.reload();
+
+    /** [실시간 통계 업데이트] 백그라운드에서 전달받은 새로운 통계 수치를 UI에 반영 */
+    if (msg.action === "UPDATE_STATS") {
+      updateStatisticsUI(msg.totalComments, msg.toxicComments);
+    }
   });
 });
