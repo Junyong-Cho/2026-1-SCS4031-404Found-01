@@ -7,7 +7,7 @@ from openai import OpenAI
 class ToxicClassifier:
     def __init__(self, client: OpenAI, model_name: str):
         self.client = client
-        self.model_name = "gpt-5o-mini"
+        self.model_name = "gpt-5.4-mini"
 
     def predict(self, text: str) -> dict: #입력:댓글, 출력:결과 dict
         prompt = f"""
