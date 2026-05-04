@@ -20,7 +20,7 @@ class LabelClassifier:
 - 출력은 반드시 JSON 형식만 사용하라.
 
 라벨 정의:
-- Profanity: 욕설, 비속어, 직접적인 모욕 표현
+- Profanity: 욕설, 비속어, 직접적인 모욕 표현. 단, 댓글이 의미 없는 욕설만으로 구성된 경우에는 SimpleProfanity로 분류한다.
 - Politics: 정치 성향, 정치인, 정당, 이념에 대한 비하/혐오/조롱 표현
 - Origin: 출신, 지역, 국가, 국적에 대한 비하 표현
 - Physical: 외모, 체형, 신체 특징에 대한 비하 표현
@@ -28,6 +28,7 @@ class LabelClassifier:
 - Gender: 성별에 대한 비하, 고정관념, 차별 표현
 - Religion: 종교에 대한 비하, 혐오, 조롱 표현
 - Race: 인종, 피부색, 민족에 대한 차별/혐오 표현
+- SimpleProfanity : 댓글이 욕설, 비속어, 감탄형 욕설 중심으로만 구성되어 있으며, 조사/어미/감탄사/지시어를 제외했을 때 의미 있는 비난 대상이나 내용이 남지 않는 경우
 
 
 판별 원칙:
@@ -45,6 +46,10 @@ class LabelClassifier:
 - 나이 또는 세대를 근거로 비하할 때만 Age로 분류하라.
 - 성별을 단순히 언급하는 것은 Gender가 아니다.
 - 성별을 근거로 능력, 성격, 행동을 일반화하거나 비하할 때만 Gender로 분류하라.
+- 댓글이 욕설 중심으로만 구성되어 있고, 욕설을 제외했을 때 특정 대상, 상황, 주장, 평가 내용이 남지 않으면 SimpleProfanity로 분류하라.
+- SimpleProfanity는 치환 사전을 통해 유희형 감탄사로 대체될 댓글을 구분하기 위한 라벨이다.
+- SimpleProfanity에 해당하는 경우 Profanity는 함께 붙이지 말고 SimpleProfanity만 반환하라.
+- 욕설이 포함되어 있더라도 특정 대상에 대한 평가, 비난, 조롱, 차별 의미가 함께 존재하면 Profanity로 분류하라.
 - 애매할 경우 라벨을 붙이지 마라.
 
 라벨 경계:
@@ -105,6 +110,26 @@ class LabelClassifier:
 출력:
 {{"labels": []}}
 
+예시 11 (SimpleProfanity)
+댓글: "씨발ㅋㅋㅋㅋ"
+출력:
+{{"labels": ["SimpleProfanity"]}}
+
+예시 12 (SimpleProfanity)
+댓글: "존나 ㅋㅋㅋㅋ"
+출력:
+{{"labels": ["SimpleProfanity"]}}
+
+예시 13 (Profanity)
+댓글: "진짜 개멍청하네."
+출력:
+{{"labels": ["Profanity"]}}
+
+예시 14 (Profanity)
+댓글: "저 사람 하는 짓이 진짜 병신 같네."
+출력:
+{{"labels": ["Profanity"]}}
+
 이제 아래 댓글을 분류하라.
 
 댓글:
@@ -136,6 +161,7 @@ class LabelClassifier:
             "Gender",
             "Religion",
             "Race",
+            "SimpleProfanity",
         }
 
         cleaned_labels = [
