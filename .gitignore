@@ -12,5 +12,8 @@ dist/
 .env
 *.log
 
+# 백엔드
+
 # 기타 공통
 .history/
+
