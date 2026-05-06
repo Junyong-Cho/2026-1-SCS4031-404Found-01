@@ -91,29 +91,31 @@ export function renderCleanResult(result, container, config) {
   // 응답이 왔으므로 스켈레톤 UI 제거
   if (skeleton) skeleton.remove();
 
+  // 원본 텍스트 최초 1회 저장
+  if (!container.dataset.originalText && commentSpan) {
+    container.dataset.originalText = commentSpan.textContent;
+  }
+
   // 매 렌더링 전 배지 초기화 (단계 변경 시 이전 배지 제거)
   const existingBadge = container.querySelector(".laundry-clean-badge");
   if (existingBadge) existingBadge.remove();
 
   if (!commentBody || !commentSpan) return;
 
-  // 원본 텍스트 최초 1회 저장
-  if (!container.dataset.originalText) {
-    container.dataset.originalText = commentSpan.textContent;
-  }
-
   if (result.isToxic) {
+    injectFeedbackButton(container, result); // 피드백 버튼 주입
     // 2단계(Humor) 또는 3단계(Refined)인 경우 텍스트 교체 및 배지 삽입
     if (result.convertedText && (result.filterStep === "2" || result.filterStep === "3")) {
       commentSpan.textContent = result.convertedText; // 순화된 텍스트로 교체
       commentBody.classList.remove("comment-seeding-blur"); // 블러 해제
       commentBody.classList.remove("comment-seeding-blur");
       injectCleanBadge(container, config); // 아바타에 주황색 점 표시
-      injectFeedbackButton(container, result); // 피드백 버튼 주입
     } else if (result.filterStep === "1") {
+      commentSpan.textContent = container.dataset.originalText;
       setupBlurUI(commentBody);
     }
   } else {
+    commentSpan.textContent = container.dataset.originalText;
     commentBody.classList.remove("comment-seeding-blur");
   }
 }
@@ -144,8 +146,8 @@ function injectFeedbackButton(container, result) {
   // 중복 생성 방지
   if (container.querySelector(".laundry-feedback-btn")) return;
 
-  const headerAuthor = container.querySelector("#header-author");
-  if (!headerAuthor) return;
+  const toolbar = container.querySelector("#toolbar");
+  if (!toolbar) return;
 
   const feedbackBtn = document.createElement("button");
   feedbackBtn.className = "laundry-feedback-btn";
@@ -158,11 +160,10 @@ function injectFeedbackButton(container, result) {
     if (feedbackReason) {
       sendFeedbackToServer(result.id, feedbackReason);
       alert("감사합니다! 의견이 접수되었습니다.");
-      feedbackBtn.remove(); // 접수 후 버튼 제거
     }
   };
 
-  headerAuthor.appendChild(feedbackBtn);
+  toolbar.appendChild(feedbackBtn);
 }
 
 // /**
