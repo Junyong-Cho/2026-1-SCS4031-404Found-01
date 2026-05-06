@@ -25,6 +25,8 @@ public static class WebAppInitializer
         app.UseAuthentication();
         app.UseAuthorization();
 
+        app.UseCors("ExtensionPolicy");
+
         app.MapControllers();
     }
 

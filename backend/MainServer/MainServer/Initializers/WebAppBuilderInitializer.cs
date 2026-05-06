@@ -1,5 +1,6 @@
 ﻿using MainServer.ExceptionHandlers;
 using MainServer.Infos;
+using MainServer.Singletons;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
@@ -25,6 +26,9 @@ public static class WebAppBuilderInitializer
         builder.Configuration.AddEnvironmentVariables();
         builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
         builder.Services.AddProblemDetails();
+        builder.Services.AddMemoryCache();
+        builder.Services.AddSingleton<AccessTokenDisposeChecker>();
+
         DbConnectionSet(builder);
 
         //if (builder.Environment.IsDevelopment())
@@ -36,6 +40,17 @@ public static class WebAppBuilderInitializer
         Configure(builder);
 
         builder.Services.AddControllers();
+
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy("ExtensionPolicy", policy =>
+            {
+                policy.WithOrigins(builder.Configuration["ExtensionAddress"]!)
+                .WithHeaders("Authorization")
+                .WithHeaders("Content-type")
+                .AllowAnyMethod();
+            });
+        });
     }
 
     /// <summary>
@@ -84,6 +99,24 @@ public static class WebAppBuilderInitializer
                     ValidateLifetime = true,
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey = key
+                };
+
+                options.Events.OnTokenValidated = context =>
+                {
+                    string jti = context.Principal?.FindFirst(JwtRegisteredClaimNames.Jti)?.Value ?? string.Empty;
+
+                    if (string.IsNullOrEmpty(jti))
+                    {
+                        context.Fail("Invalid Token");
+                        return Task.CompletedTask;
+                    }
+
+                    var checker = context.HttpContext.RequestServices.GetRequiredService<AccessTokenDisposeChecker>();
+
+                    if (checker.CheckDisposed(jti) == true)
+                        context.Fail("Invalid Token");
+
+                    return Task.CompletedTask;
                 };
             });
 

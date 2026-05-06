@@ -1,7 +1,6 @@
-﻿using Dapper;
-using MainServer.Dtos.FromClient;
-using MainServer.Dtos.FromServer;
+﻿using MainServer.Dtos.FromClient;
 using MainServer.Infos;
+using MainServer.Singletons;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -9,7 +8,6 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
-using Npgsql;
 using System.Security.Claims;
 
 namespace MainServer.Controllers;
@@ -59,10 +57,13 @@ public class TestController : ControllerBase
 
         SecurityTokenDescriptor descriptor = new()
         {
-            Subject = new([new(JwtRegisteredClaimNames.Sub, userId), new(JwtRegisteredClaimNames.Email, email)]),
+            Subject = new([new(JwtRegisteredClaimNames.Sub, userId), 
+                    new(JwtRegisteredClaimNames.Email, email),
+                    new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())]
+                ),
             Issuer = serverInfo.Value.Issuer,
             Audience = serverInfo.Value.Audience,
-            Expires = DateTime.Now.AddMinutes(serverInfo.Value.ExpireHours),
+            Expires = DateTime.Now.AddHours(serverInfo.Value.ExpireHours),
             SigningCredentials = credentials
         };
 
@@ -90,39 +91,21 @@ public class TestController : ControllerBase
     }
 
     /// <summary>
-    /// 환경 변수 잘 불러오는지
+    /// 토큰 폐기
     /// </summary>
-    /// <param name="googleInfo"></param>
-    /// <param name="serverInfo"></param>
-    ///// <returns></returns>
-    //[HttpGet("info")]
-    //[ProducesResponseType<object>(StatusCodes.Status200OK)]
-    //public IResult EnvironmentVarTest(IOptions<GoogleInfo> googleInfo, IOptions<ServerInfo> serverInfo)
-    //{
-    //    var res = new
-    //    {
-    //        GoogleIss = googleInfo.Value.Issuer,
-    //        GoogleAud = googleInfo.Value.Audience,
-    //        ServerIss = serverInfo.Value.Issuer,
-    //        ServerAud = serverInfo.Value.Audience
-    //    };
-        
-    //    return Results.Ok(res);
-    //}
+    /// <param name="checker"></param>
+    /// <returns></returns>
+    [Authorize]
+    [HttpGet("logout")]
+    public IResult Logout(AccessTokenDisposeChecker checker)
+    {
+        string jti = User.FindFirstValue(JwtRegisteredClaimNames.Jti)!;
+        string exp = User.FindFirstValue(JwtRegisteredClaimNames.Exp)!;
 
-    ///// <summary>
-    ///// db 조회 잘 하는지 테스트
-    ///// </summary>
-    ///// <param name="dataSource"></param>
-    ///// <returns></returns>
-    //[HttpGet("admin")]
-    //[ProducesResponseType<UserDto>(StatusCodes.Status200OK)]
-    //public async Task<IResult> AdminData(NpgsqlDataSource dataSource)
-    //{
-    //    using var dbCon = await dataSource.OpenConnectionAsync();
+        DateTimeOffset expires = DateTimeOffset.FromUnixTimeSeconds(long.Parse(exp));
 
-    //    UserDto? admin = await dbCon.QueryFirstOrDefaultAsync<UserDto>("select user_id, email from users where user_id='admin'");
-        
-    //    return Results.Ok(admin.Value);
-    //}
+        checker.DisposeToken(jti, expires);
+
+        return Results.Ok();
+    }
 }

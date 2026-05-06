@@ -38,7 +38,7 @@ public class AuthController : ControllerBase
     [HttpPost("google-signup")]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<string>(StatusCodes.Status200OK)]
-    public async Task<IResult> GoogleSignup
+    public async Task<IResult> GoogleSignupAsync
         (NpgsqlDataSource dataSource, IOptions<GoogleInfo> googleInfo, SigningCredentials credentials, JsonWebTokenHandler handler, 
         ConfigurationManager<OpenIdConnectConfiguration> configurationManager, GoogleOAuthTokenDto authToken)
     {
@@ -90,7 +90,7 @@ public class AuthController : ControllerBase
     [HttpPost("google-signin")]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<AuthOkTokenDto>(StatusCodes.Status200OK)]
-    public async Task<IResult> GoogleSignin
+    public async Task<IResult> GoogleSigninAsync
         (ConfigurationManager<OpenIdConnectConfiguration> configurationManager, IOptions<ServerInfo> serverInfo, IOptions<GoogleInfo> googleInfo,
          JsonWebTokenHandler handler, NpgsqlDataSource dataSource, SigningCredentials credentials, GoogleOAuthTokenDto authToken)
     {
