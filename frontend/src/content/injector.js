@@ -9,6 +9,7 @@ import {
   cleanCache,
 } from "./cleaner.js";
 import "./injector.css";
+import "./feedback/feedback.css";
 
 let commentQueue = [];
 const processedIds = new Set();

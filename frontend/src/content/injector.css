@@ -62,20 +62,33 @@ ytm-comment-renderer {
 /* 의견 보내기 버튼 스타일 */
 .laundry-feedback-btn {
   margin-left: auto;
+  margin-right: 10px;
+  border: 1px solid rgba(255, 165, 0, 0.3);
   background-color: transparent;
-  border: 1px solid #ccc;
-  border-radius: 12px;
+  border-radius: 18px;
   color: #606060;
   font-size: 11px;
-  padding: 2px 8px;
+  font-weight: 500;
+  padding: 0 10px;
   cursor: pointer;
+  height: 28px;
+  display: flex;
+  align-items: center;
   transition: all 0.2s;
-  height: fit-content;
-  align-self: center;
+}
+
+.laundry-feedback-btn::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background-color: orange;
+  border-radius: 50%;
+  margin-right: 6px;
 }
 
 .laundry-feedback-btn:hover {
-  background-color: #f2f2f2;
-  border-color: #909090;
+  background-color: rgba(255, 165, 0, 0.1);
+  border-color: orange;
   color: #0f0f0f;
 }

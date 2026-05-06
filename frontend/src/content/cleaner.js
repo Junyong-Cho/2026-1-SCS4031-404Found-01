@@ -1,4 +1,5 @@
 // src/content/cleaner.js
+import { showFeedbackModal } from "./feedback/feedback.js";
 
 /**
  * 정화된 댓글 데이터를 메모리에 임시 저장하는 캐시 맵
@@ -156,25 +157,11 @@ function injectFeedbackButton(container, result) {
 
   // 클릭 이벤트: 피드백 폼 열기 또는 서버 전송
   feedbackBtn.onclick = () => {
-    const feedbackReason = prompt("의견을 남겨주세요 (예: 오탐지, 순화 어색함 등):");
-    if (feedbackReason) {
-      sendFeedbackToServer(result.id, feedbackReason);
-      alert("감사합니다! 의견이 접수되었습니다.");
-    }
+    showFeedbackModal(result.id);
   };
 
   toolbar.appendChild(feedbackBtn);
 }
-
-// /**
-//  * 서버로 피드백 데이터를 전송하는 함수
-//  */
-// function sendFeedbackToServer(commentId, reason) {
-//   chrome.runtime.sendMessage({
-//     type: "SEND_FEEDBACK",
-//     data: { id: commentId, reason: reason },
-//   });
-// }
 
 /**
  * 서버에서 넘어온 다수의 댓글 정화 결과 리스트를 순회하며 렌더링 지시
