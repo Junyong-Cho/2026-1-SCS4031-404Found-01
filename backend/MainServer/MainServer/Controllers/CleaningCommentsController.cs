@@ -1,6 +1,8 @@
 ﻿using MainServer.Dtos.FromClient;
 using MainServer.Dtos.FromServer;
+using MainServer.Infos;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace MainServer.Controllers;
 
@@ -11,26 +13,29 @@ namespace MainServer.Controllers;
 [Route("/cleaning")]
 public class CleaningCommentsController : ControllerBase
 {
-    static Random random = new();
+    //static Random random = new();
 
     /// <summary>
-    /// 특정 확률로 정화
+    /// 정화 요청 처리
     /// </summary>
     /// <param name="comments"></param>
+    /// <param name="aiServer"></param>
     /// <returns></returns>
     [HttpPost]
-    public async Task<IResult> RequestCleaningAsync(RequestCleaningCommentsDto comments)
+    [ProducesResponseType<ResponseCleaningCommentsDto>(StatusCodes.Status200OK)]
+    public async Task<IResult> RequestCleaningAsync(RequestCleaningCommentsDto comments, IOptions<AIServerInfo> aiServer)
     {
+        /*
         var requestComments = comments.Comments;
-        var responseComments = new ResponseComment[requestComments.Length];
+        List<ResponseComment> responseComments = new(requestComments.Count);
 
         Stat stat = new()
         {
             ToxicCount = 0,
-            TotalScanned = requestComments.Length
+            TotalScanned = requestComments.Count
         };
 
-        for (int i = 0; i < requestComments.Length; i++)
+        for (int i = 0; i < requestComments.Count; i++)
         {
             ResponseComment comment = new()
             {
@@ -47,7 +52,7 @@ public class CleaningCommentsController : ControllerBase
                 stat.ToxicCount++;
             }
 
-            responseComments[i] = comment;
+            responseComments.Add(comment);
         }
 
         ResponseCleaningCommentsDto response = new()
@@ -55,6 +60,14 @@ public class CleaningCommentsController : ControllerBase
             Results = responseComments,
             Stats = stat
         };
+        */
+
+        HttpClient client = new();
+
+        var res = await client.PostAsJsonAsync(aiServer.Value.RequestURL, comments);
+        Console.WriteLine(res.StatusCode);
+        
+        var response = await res.Content.ReadFromJsonAsync<ResponseCleaningCommentsDto>();
 
         return Results.Ok(response);
     }
