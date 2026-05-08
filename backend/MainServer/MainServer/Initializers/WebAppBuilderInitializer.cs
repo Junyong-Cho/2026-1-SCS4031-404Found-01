@@ -45,9 +45,9 @@ public static class WebAppBuilderInitializer
         {
             options.AddPolicy("ExtensionPolicy", policy =>
             {
-                policy.WithOrigins(builder.Configuration["ExtensionAddress"]!)
-                .WithHeaders("Authorization")
-                .WithHeaders("Content-type")
+                policy.AllowAnyOrigin()//WithOrigins(builder.Configuration["ExtensionAddress"]!)
+                .AllowAnyHeader()//.WithHeaders("Authorization")
+                //.WithHeaders("Content-type")
                 .AllowAnyMethod();
             });
         });
@@ -131,5 +131,6 @@ public static class WebAppBuilderInitializer
     {
         builder.Services.Configure<GoogleInfo>(builder.Configuration.GetSection("GoogleInfo"));
         builder.Services.Configure<ServerInfo>(builder.Configuration.GetSection("ServerInfo"));
+        builder.Services.Configure<AIServerInfo>(builder.Configuration.GetSection("AIServerInfo"));
     }
 }

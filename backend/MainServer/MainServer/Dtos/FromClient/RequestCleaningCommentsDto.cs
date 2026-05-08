@@ -13,7 +13,7 @@ public struct RequestCleaningCommentsDto
     /// <summary>
     /// 댓글 리스트
     /// </summary>
-    public RequestComment[] Comments { get; set; }
+    public List<RequestComment> Comments { get; set; }
 }
 
 /// <summary>

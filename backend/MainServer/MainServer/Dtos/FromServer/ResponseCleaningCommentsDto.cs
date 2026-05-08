@@ -1,6 +1,4 @@
-﻿using MainServer.Dtos.FromClient;
-
-namespace MainServer.Dtos.FromServer;
+﻿namespace MainServer.Dtos.FromServer;
 
 /// <summary>
 /// 정화 요청에 대한 응답 DTO
@@ -10,7 +8,7 @@ public struct ResponseCleaningCommentsDto
     /// <summary>
     /// 응답 댓글 리스트
     /// </summary>
-    public ResponseComment[] Results { get; set; }
+    public List<ResponseComment> Results { get; set; }
 
     /// <summary>
     /// 통계
