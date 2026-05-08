@@ -17,3 +17,4 @@ dist/
 # 기타 공통
 .history/
 
+**/__pycache__/**
