@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "댓글세탁소",
+  "version": "1.0.0",
+  "description": "AI 기반 유해 댓글 정화 시스템",
+  "permissions": ["identity", "storage", "tabs", "activeTab"],
+  "oauth2": {
+    "client_id": "833613304454-p2kmh0hog955nfidg8ibe5hsrb3n183t.apps.googleusercontent.com",
+    "scopes": ["email", "profile", "openid"]
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html"
+  },
+  "background": {
+    "service_worker": "assets/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["assets/injector.js"],
+      "css": ["assets/injector.css"]
+    }
+  ]
+}

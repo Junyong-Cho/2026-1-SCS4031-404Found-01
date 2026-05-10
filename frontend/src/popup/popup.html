@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <nav class="toggle-shell">
+      <button id="mode-general" class="mode-tab active" type="button">일반 모드</button>
+      <button id="mode-clean" class="mode-tab" type="button">클린 모드</button>
+      <div class="mode-track"></div>
+      <div class="mode-indicator"></div>
+      <input type="checkbox" id="service-onoff" checked hidden />
+    </nav>
+    <div id="user-info-bar" class="user-bar" style="display: none">
+      <span id="user-email"></span>
+      <button id="btn-logout" type="button">로그아웃</button>
+    </div>
+    <div class="container">
+      <section class="filter-settings">
+        <div class="filter-item">
+          <span class="step-label">1단계 (Blur)</span>
+          <label class="switch">
+            <input type="radio" name="filterStep" value="1" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="filter-item">
+          <span class="step-label">2단계 (Humor)</span>
+          <label class="switch">
+            <input type="radio" name="filterStep" value="2" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="filter-item">
+          <span class="step-label">3단계 (Refined)</span>
+          <label class="switch">
+            <input type="radio" name="filterStep" value="3" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <section class="statistics-card">
+        <div class="stats-info">
+          <h4>Statistics</h4>
+          <p>전체 댓글 : <span id="total-count">0</span></p>
+          <p>감지된 악플 : <span id="toxic-count" class="highlight">0</span> (0%)</p>
+        </div>
+        <div class="stats-chart">
+          <div class="pie-chart" id="stats-pie-chart"><span>0</span></div>
+        </div>
+      </section>
+
+      <section class="personal-settings">
+        <div class="section-header">
+          <h4>맞춤 금지어 설정</h4>
+        </div>
+        <div class="keyword-input-group">
+          <input type="text" id="keyword-input" placeholder="차단할 단어 입력" />
+          <button id="add-keyword">추가</button>
+        </div>
+        <div id="keyword-tags" class="tag-container"></div>
+      </section>
+    </div>
+    <script type="module" src="js/popup.js"></script>
+  </body>
+</html>
