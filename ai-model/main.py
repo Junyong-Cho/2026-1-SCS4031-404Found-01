@@ -4,11 +4,69 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 import pandas as pd
+import random
 
 from models.label_classifier import LabelClassifier
 from models.refiner import Refiner
 from models.toxic_classifier import ToxicClassifier
 
+# 독성 판단 실패 시 예외처리
+class ToxicClassificationError(Exception): 
+    pass
+def predict_toxic_retry(comment: str, retry_count: int = 1):
+    last_error = None
+
+    for _ in range(retry_count + 1):
+        try:
+            toxic_result = toxic_classifier.predict(comment)
+
+            if not isinstance(toxic_result, dict):
+                raise ValueError("toxic_result가 dict가 아닙니다.")  # 독성 분류 응답 형식 검증
+
+            label = toxic_result.get("label")
+            if label not in ["toxic", "non-toxic"]:
+                raise ValueError(f"잘못된 toxic label: {label}")  # 허용되지 않은 라벨 검증
+
+            return {
+                "label": label,
+                "is_toxic": label == "toxic",
+                "toxic_status": "success"
+            }
+
+        except Exception as e:
+            last_error = e
+
+    raise ToxicClassificationError(str(last_error))
+
+# 라벨링 실패시 예외 처리
+def predict_labels_retry(comment: str, retry_count: int = 1):
+    last_error = None
+
+    for _ in range(retry_count + 1):
+        try:
+            label_result = classifier.predict(comment)
+            labels = label_result.get("labels", [])
+
+            if not isinstance(labels, list):
+                raise ValueError("labels가 list가 아닙니다.")  # 라벨 응답 형식 검증
+
+            if len(labels) == 0:
+                raise ValueError("labels가 비어 있습니다.")  # toxic 댓글인데 라벨이 없으면 fallback 재시도
+
+            return {
+                "labels": labels,
+                "label_status": "success",
+                "label_error": ""
+            }
+
+        except Exception as e:
+            last_error = e
+
+    return {
+        "labels": [],
+        "label_status": "label_error",
+        "label_error": str(last_error)
+    }  # 변경: 라벨링 실패는 기록만 남기고 정화는 계속 진행
 
 def load_bad_words(csv_path: str):
     df = pd.read_csv(csv_path)
@@ -17,13 +75,19 @@ def load_bad_words(csv_path: str):
 
 def replace_simple_profanity(text: str, bad_words: list):
     refined_text = text
+    REPLACEMENT_WORDS = ["아잉❤️", "뀨❤️", "삐용⭐"]
+    replacement = random.choice(REPLACEMENT_WORDS)
 
-    for bad_word in bad_words:
-        if bad_word in refined_text:
-            refined_text = refined_text.replace(bad_word, "치환")
+    matched = False  # 실제 치환이 확인 플래그
 
-    if refined_text == text:
-        refined_text = "치환"
+    for bad_word in sorted(bad_words, key=len, reverse=True):
+        # 사전에 있는 긴 욕설부터 먼저 매칭 ex) 개병신 -> 개아잉❤️ 방지
+        if bad_word and bad_word in refined_text:
+            refined_text = refined_text.replace(bad_word, replacement)
+            matched = True
+
+    if not matched: # 매칭 안되면 문장 전체 치환
+        refined_text = replacement
 
     return {
         "original_text": text,
@@ -55,35 +119,40 @@ bad_words = load_bad_words("models/profanityDict_result_v2.csv")
 
 
 def refine_comment(comment: str):
-    toxic_result = toxic_classifier.predict(comment)
+    toxic_result = predict_toxic_retry(comment) # 독성 판단 실패 시 예외처리
 
-    if not toxic_result["is_toxic"]:
+    if toxic_result["label"] == "non-toxic":
         return {
             "original_text": comment,
             "refined_text": comment,
-            "process_type": "no_filter",
+            "process_type": "pass",
             "labels": [],
+            "label_status": "not_executed",
+            "label_error": "",
             "toxic_result": toxic_result
         }
 
-    label_result = classifier.predict(comment)
-    labels = label_result.get("labels", [])
+    label_info = predict_labels_retry(comment) # toxic으로 분류된 경우에만 라벨링 수행. 실패하면 labels=[]로 반환됨
+
+    labels = label_info["labels"]
+    label_status = label_info["label_status"]
+    label_error = label_info["label_error"]
 
     if "SimpleProfanity" in labels:
         final_result = replace_simple_profanity(comment, bad_words)
+        final_result["process_type"] = "dictionary_replacement"
 
     elif len(labels) > 0:
         final_result = refiner.refine(comment)
-        final_result["process_type"] = "llm_refinement"
+        final_result["process_type"] = final_result.get("process_type", "llm_refinement")
 
     else:
-        final_result = {
-            "original_text": comment,
-            "refined_text": comment,
-            "process_type": "no_filter"
-        }
+        final_result = refiner.refine(comment)
+        final_result["process_type"] = final_result.get("process_type", "llm_refinement_type_label_error")
 
     final_result["labels"] = labels
+    final_result["label_status"] = label_status
+    final_result["label_error"] = label_error
     final_result["toxic_result"] = toxic_result
 
     return final_result
