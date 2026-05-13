@@ -16,29 +16,48 @@ let commentQueue = [];
 const processedIds = new Set();
 const observationTimers = new Map();
 
+const MAX_BATCH_SIZE = 15; // 한 번에 보낼 최대 댓글 수
+
 /**
  * [핵심] 큐 처리 로직 (설정에 따라 분기)
  */
 const flushQueue = async () => {
   const settings = await chrome.storage.local.get(["serviceActive", "filterStep"]);
+
+  // 서비스가 비활성화 상태이거나 전송할 댓글이 없으면 종료
   if (!settings.serviceActive || commentQueue.length === 0) return;
+
+  // 1. 큐에서 최대 15개까지만 잘라내기 (남은 건 다음 1.5초 주기에 처리)
+  const chunk = commentQueue.splice(0, MAX_BATCH_SIZE);
 
   const stepMap = { 1: "blur", 2: "humor", 3: "refine" };
   const payload = {
     userSetting: stepMap[settings.filterStep] || "blur",
-    comments: commentQueue.map((c) => ({ id: String(c.id), text: String(c.text) })),
+    comments: chunk.map((c) => ({ id: String(c.id), text: String(c.text) })),
   };
 
-  commentQueue = [];
-
-  console.log("[서버 전송 payload]", JSON.stringify(payload, null, 2));
+  // --- [로그] 서버로 보내는 내용 확인 ---
+  console.group(`[서버 전송] 총 ${chunk.length}개 댓글 발송`);
+  console.log("전송 데이터(Payload):", payload);
+  console.groupEnd();
 
   chrome.runtime.sendMessage({ type: "PROCESS_COMMENTS", data: payload }, (response) => {
-    console.log("[서버 응답 raw]", response);
+    // --- [로그] 서버에서 온 내용 확인 ---
     if (chrome.runtime.lastError) {
-      console.error("[sendMessage 에러]", chrome.runtime.lastError.message);
+      console.error("[통신 에러]", chrome.runtime.lastError.message);
+      return;
     }
-    if (response?.results) renderCleanResults(response);
+
+    console.group(`[서버 응답] 수신 완료`);
+    console.log("받은 데이터(Response):", response);
+
+    if (response?.results) {
+      console.log(`성공적으로 ${response.results.length}개의 분석 결과를 가져왔습니다.`);
+      renderCleanResults(response);
+    } else {
+      console.warn("서버 응답 형식이 올바르지 않거나 결과가 없습니다.");
+    }
+    console.groupEnd();
   });
 };
 
