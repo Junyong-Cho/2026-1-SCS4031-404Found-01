@@ -37,42 +37,41 @@ document.addEventListener("DOMContentLoaded", () => {
     personalSettings: document.querySelector(".personal-settings"),
   };
 
-  // --- 2. 초기 데이터 로드 (저장소에서 설정 및 통계 정보 가져오기) ---
-  chrome.storage.local.get(
-    ["filterStep", "serviceActive", "personalKeywords", "userEmail", "isLoggedIn", "totalComments", "toxicComments"],
-    (res) => {
-      // (1) 이전에 설정한 정화 단계(1, 2, 3) 라디오 버튼 복구
-      if (res.filterStep) {
-        const targetRadio = document.querySelector(`input[value="${res.filterStep}"]`);
-        if (targetRadio) targetRadio.checked = true;
-      }
+  // --- 2. 초기 데이터 로드 (저장소 분리 호출) ---
 
-      // (2) 서비스 활성화 상태 및 UI 테마 업데이트
-      if (res.serviceActive !== undefined) {
-        mainToggle.checked = res.serviceActive;
-      } else {
-        mainToggle.checked = false; // 최초 진입은 일반 모드 기본
-      }
-      updateModeUI(mainToggle.checked, DOM);
+  // (A) 영구 저장 데이터 (local): 설정, 키워드, 로그인 정보
+  chrome.storage.local.get(["filterStep", "serviceActive", "personalKeywords", "userEmail", "isLoggedIn"], (res) => {
+    // (1) 정화 단계 라디오 복구
+    if (res.filterStep) {
+      const targetRadio = document.querySelector(`input[value="${res.filterStep}"]`);
+      if (targetRadio) targetRadio.checked = true;
+    }
 
-      // (3) 로그인 상태에 따른 UI 분기 (이메일 노출 및 입력창 상태 제어)
-      if (res.isLoggedIn) {
-        userInfoBar.style.display = "flex";
-        userEmailElem.innerText = res.userEmail || "";
-        keywordInput.placeholder = "차단할 단어 입력";
-      } else {
-        userInfoBar.style.display = "none";
-        keywordInput.placeholder = "클릭하여 로그인 후 이용";
-      }
+    // (2) 서비스 활성화 상태 복구
+    mainToggle.checked = res.serviceActive ?? false;
+    updateModeUI(mainToggle.checked, DOM);
 
-      // (4) 정화 통계 리포트 및 개인 차단 키워드 태그 생성
-      updateStatisticsUI(res.totalComments || 0, res.toxicComments || 0);
-      if (res.personalKeywords) {
-        keywordTagsContainer.innerHTML = "";
-        res.personalKeywords.forEach((k) => addTag(k, keywordTagsContainer));
-      }
-    },
-  );
+    // (3) 로그인 상태 UI 처리
+    if (res.isLoggedIn) {
+      userInfoBar.style.display = "flex";
+      userEmailElem.innerText = res.userEmail || "";
+      keywordInput.placeholder = "차단할 단어 입력";
+    } else {
+      userInfoBar.style.display = "none";
+      keywordInput.placeholder = "클릭하여 로그인 후 이용";
+    }
+
+    // (4) 개인 차단 키워드 태그 생성
+    if (res.personalKeywords) {
+      keywordTagsContainer.innerHTML = "";
+      res.personalKeywords.forEach((k) => addTag(k, keywordTagsContainer));
+    }
+
+    // (B) 휘발성 데이터 (session): 실시간 정화 통계
+    chrome.storage.session.get(["totalComments", "toxicComments"], (sessionRes) => {
+      updateStatisticsUI(sessionRes.totalComments || 0, sessionRes.toxicComments || 0);
+    });
+  });
 
   // --- 3. 이벤트 핸들러 및 인증 로직 ---
 
