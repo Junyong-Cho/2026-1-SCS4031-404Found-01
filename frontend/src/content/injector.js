@@ -69,18 +69,16 @@ function initObservation() {
   if (!config) return;
 
   const newContainers = document.querySelectorAll(`${config.container}:not([data-observed])`);
-  if (!newContainers.length) {
-    console.warn(`[DOM 매핑 경고] 댓글 컨테이너를 찾지 못했습니다. selector=${config.container}`);
-  }
+
+  if (newContainers.length === 0) return;
 
   newContainers.forEach((container) => {
     const linkEl = querySelectorWithFallback(container, config.link, "commentLink");
     const lcId = extractLcId(linkEl?.getAttribute("href"));
 
     if (!linkEl || !lcId) {
-      console.warn("[DOM 매핑 경고] 댓글 링크 또는 lcId를 찾을 수 없습니다.", {
+      console.warn("[DOM 매핑 경고] 댓글 컨테이너는 발견했으나 ID(lcId) 추출에 실패했습니다.", {
         container,
-        linkSelector: config.link,
         lcId,
       });
       return;
@@ -88,7 +86,7 @@ function initObservation() {
 
     container.setAttribute("data-lc-id", lcId);
     container.setAttribute("data-observed", "true");
-    commentObserver.observe(container); // 화면 노출 감지 시작
+    commentObserver.observe(container);
   });
 }
 
