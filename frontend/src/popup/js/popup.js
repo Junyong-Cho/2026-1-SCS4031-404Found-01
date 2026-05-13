@@ -11,13 +11,31 @@ document.addEventListener("DOMContentLoaded", () => {
   const stepRadios = document.querySelectorAll('input[name="filterStep"]'); // 1/2/3단계 라디오 버튼
   const mainToggle = document.getElementById("service-onoff"); // 전체 서비스 ON/OFF 토글
   const modeGeneralLabel = document.getElementById("mode-general"); // '일반' 모드 레이블
-  const modeCleanLabel = document.getElementById("mode-clean"); // '세탁' 모드 레이블
+  const modeCleanLabel = document.getElementById("mode-clean"); // '클린' 모드 레이블
   const keywordInput = document.getElementById("keyword-input"); // 키워드 입력창
   const addKeywordBtn = document.getElementById("add-keyword"); // 키워드 추가 버튼
   const keywordTagsContainer = document.getElementById("keyword-tags"); // 추가된 키워드 태그가 담길 컨테이너
   const logoutBtn = document.getElementById("btn-logout"); // 로그아웃 버튼
   const userEmailElem = document.getElementById("user-email"); // 유저 이메일 표시 영역
   const userInfoBar = document.getElementById("user-info-bar"); // 유저 정보 표시 바
+
+  // --- 1-1. DOM 매핑 테이블 (디버깅 및 구조 확인용) ---
+  const DOM = {
+    stepRadios,
+    mainToggle,
+    modeGeneralLabel,
+    modeCleanLabel,
+    keywordInput,
+    addKeywordBtn,
+    keywordTagsContainer,
+    logoutBtn,
+    userEmailElem,
+    userInfoBar,
+    filterSettings: document.querySelector(".filter-settings"),
+    cleanModePrompt: document.querySelector(".clean-mode-prompt"),
+    statisticsCard: document.querySelector(".statistics-card"),
+    personalSettings: document.querySelector(".personal-settings"),
+  };
 
   // --- 2. 초기 데이터 로드 (저장소에서 설정 및 통계 정보 가져오기) ---
   chrome.storage.local.get(
@@ -30,8 +48,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       // (2) 서비스 활성화 상태 및 UI 테마 업데이트
-      if (res.serviceActive !== undefined) mainToggle.checked = res.serviceActive;
-      updateModeUI(mainToggle.checked);
+      if (res.serviceActive !== undefined) {
+        mainToggle.checked = res.serviceActive;
+      } else {
+        mainToggle.checked = false; // 최초 진입은 일반 모드 기본
+      }
+      updateModeUI(mainToggle.checked, DOM);
 
       // (3) 로그인 상태에 따른 UI 분기 (이메일 노출 및 입력창 상태 제어)
       if (res.isLoggedIn) {
@@ -129,7 +151,7 @@ document.addEventListener("DOMContentLoaded", () => {
     chrome.storage.local.set({ serviceActive: isActive });
 
     // 2. 팝업창 테마 및 텍스트 UI 업데이트 (일반모드 <-> 클린모드)
-    updateModeUI(isActive);
+    updateModeUI(isActive, DOM);
 
     // 3. 현재 활성화된 탭(유튜브)을 찾아 실시간 상태 변경 신호 전송
     chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {

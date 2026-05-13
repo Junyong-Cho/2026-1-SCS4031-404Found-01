@@ -7,6 +7,7 @@ import {
   renderCleanResult,
   restoreAllComments,
   cleanCache,
+  querySelectorWithFallback,
 } from "./cleaner.js";
 import "./injector.css";
 import "./feedback/feedback.css";
@@ -49,16 +50,26 @@ function initObservation() {
   if (!config) return;
 
   const newContainers = document.querySelectorAll(`${config.container}:not([data-observed])`);
+  if (!newContainers.length) {
+    console.warn(`[DOM 매핑 경고] 댓글 컨테이너를 찾지 못했습니다. selector=${config.container}`);
+  }
 
   newContainers.forEach((container) => {
-    const linkEl = container.querySelector(config.link);
+    const linkEl = querySelectorWithFallback(container, config.link, "commentLink");
     const lcId = extractLcId(linkEl?.getAttribute("href"));
 
-    if (lcId) {
-      container.setAttribute("data-lc-id", lcId);
-      container.setAttribute("data-observed", "true");
-      commentObserver.observe(container); // 화면 노출 감지 시작
+    if (!linkEl || !lcId) {
+      console.warn("[DOM 매핑 경고] 댓글 링크 또는 lcId를 찾을 수 없습니다.", {
+        container,
+        linkSelector: config.link,
+        lcId,
+      });
+      return;
     }
+
+    container.setAttribute("data-lc-id", lcId);
+    container.setAttribute("data-observed", "true");
+    commentObserver.observe(container); // 화면 노출 감지 시작
   });
 }
 
@@ -77,11 +88,13 @@ const commentObserver = new IntersectionObserver(
           if (!serviceActive || processedIds.has(lcId)) return;
 
           const config = getConfig();
-          const commentEl = target.querySelector(config.comment);
+          const commentEl = querySelectorWithFallback(target, config.comment, "commentBody");
           if (commentEl) {
             applyBlurAndSkeleton(target, config); // 로딩 UI 적용
             commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
             processedIds.add(lcId);
+          } else {
+            console.warn(`[DOM 매핑 경고] 화면 노출된 댓글에서 본문을 찾을 수 없습니다. lcId=${lcId}`);
           }
         }, 800);
         observationTimers.set(target, timer);
@@ -133,11 +146,13 @@ chrome.runtime.onMessage.addListener((msg) => {
           renderCleanResult(cached, container, config);
         } else if (!processedIds.has(lcId)) {
           // 캐시 없는 것만 새로 요청
-          const commentEl = container.querySelector(config.comment);
+          const commentEl = querySelectorWithFallback(container, config.comment, "commentBody");
           if (commentEl) {
             applyBlurAndSkeleton(container, config);
             commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
             processedIds.add(lcId);
+          } else {
+            console.warn(`[DOM 매핑 경고] 전환 시 댓글 본문을 찾을 수 없습니다. lcId=${lcId}`);
           }
         }
       });
@@ -150,22 +165,50 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 });
 
-// 단계 변경 감지
-chrome.storage.onChanged.addListener((changes) => {
-  if (!changes.filterStep) return;
+// 설정 변경 감지 (단계 변경 + 금지어 변경)
+chrome.storage.onChanged.addListener(async (changes, areaName) => {
+  if (areaName !== "local") return;
 
-  const newStep = changes.filterStep.newValue;
   const config = getConfig();
 
-  // 캐시에 있는 모든 댓글을 새 단계로 재렌더링
-  document.querySelectorAll("[data-lc-id]").forEach((container) => {
-    const lcId = container.getAttribute("data-lc-id");
-    const cached = cleanCache.get(lcId);
-    if (!cached) return;
+  // 1. 단계(filterStep)가 바뀐 경우 -> 기존 캐시 활용해서 화면만 다시 그림
+  if (changes.filterStep) {
+    const newStep = changes.filterStep.newValue;
+    console.log("[설정 변경] 단계가 변경되었습니다. 캐시 데이터로 화면을 갱신합니다.");
 
-    cached.filterStep = newStep; // 단계 업데이트
-    renderCleanResult(cached, container, config);
-  });
+    document.querySelectorAll("[data-lc-id]").forEach((container) => {
+      const lcId = container.getAttribute("data-lc-id");
+      const cached = cleanCache.get(lcId);
+      if (!cached) return;
+
+      cached.filterStep = newStep;
+      renderCleanResult(cached, container, config);
+    });
+  }
+
+  // 2. 금지어(personalKeywords)가 바뀐 경우 -> 캐시 싹 비우고 서버에 재요청
+  if (changes.personalKeywords) {
+    console.log("[설정 변경] 금지어가 추가/삭제되었습니다. 캐시를 비우고 다시 분석합니다.");
+
+    // 캐시와 처리된 ID 목록 초기화 (그래야 다시 요청함)
+    cleanCache.clear();
+    processedIds.clear();
+
+    // 현재 화면에 보이는 댓글들을 다시 정화 프로세스에 태움
+    document.querySelectorAll(`${config.container}[data-lc-id]`).forEach((container) => {
+      const lcId = container.getAttribute("data-lc-id");
+      const commentEl = querySelectorWithFallback(container, config.comment, "commentBody");
+
+      if (commentEl) {
+        applyBlurAndSkeleton(container, config); // 다시 로딩 표시
+        commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
+        processedIds.add(lcId);
+      }
+    });
+
+    // 큐에 넣었으니 즉시 전송 시도
+    flushQueue();
+  }
 });
 
 // 1.5초 주기로 서버 전송
