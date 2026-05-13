@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "댓글세탁소",
   "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9SxCvfjLxvjFXstnug3jW1o7AzMM5na+PktnCQi3p2pORhpQFQoIG6Pjdq5X+7XCnkswW0d39mwKOsc+F/trApawTpGapf18vkNopOzbjuuH/Wf3MbFr2P37W/SMQyOwE9GzwicPTz1Ka7UXlJiu460OyccqTWR0xGz2CKJ6G8HPPo6UJUq61VvsMi12k2rnYkkcoDdobjohBbUd8xHwqu7GrHBallWTa3B98SQ4GftKaN28B7RcUWXLH34yiUAmXRcD6VVrqTAivujzY55/W++szvpBBqry7OOKuKrIK1r0Ndei2I/5o36CU8NucAO/7e1+Rf0XP0yBR9H2DNC//pQIDAQAB",
   "description": "AI 기반 유해 댓글 정화 시스템",
   "permissions": ["identity", "storage", "tabs", "activeTab"],
   "oauth2": {
