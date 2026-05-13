@@ -19,7 +19,7 @@ const observationTimers = new Map();
 const MAX_BATCH_SIZE = 15; // 한 번에 보낼 최대 댓글 수
 
 /**
- * [핵심] 큐 처리 로직 (설정에 따라 분기)
+ * 큐 처리 로직 (설정에 따라 분기)
  */
 const flushQueue = async () => {
   const settings = await chrome.storage.local.get(["serviceActive", "filterStep"]);
@@ -27,7 +27,7 @@ const flushQueue = async () => {
   // 서비스가 비활성화 상태이거나 전송할 댓글이 없으면 종료
   if (!settings.serviceActive || commentQueue.length === 0) return;
 
-  // 1. 큐에서 최대 15개까지만 잘라내기 (남은 건 다음 1.5초 주기에 처리)
+  // 큐에서 최대 15개까지만 잘라내기 (남은 건 다음 1.5초 주기에 처리)
   const chunk = commentQueue.splice(0, MAX_BATCH_SIZE);
 
   const stepMap = { 1: "blur", 2: "humor", 3: "refine" };
@@ -62,7 +62,7 @@ const flushQueue = async () => {
 };
 
 /**
- * [핵심] 댓글 감지 및 데이터 추출
+ * 댓글 감지 및 데이터 추출
  */
 function initObservation() {
   const config = getConfig();
@@ -91,35 +91,45 @@ function initObservation() {
 }
 
 /**
- * [핵심] 화면 체류 감지 (0.8초)
+ * 화면 노출 감지 즉시 블러 처리 + 체류 후 큐 삽입
  */
 const commentObserver = new IntersectionObserver(
   (entries) => {
     entries.forEach(async (entry) => {
-      if (entry.isIntersecting) {
-        const target = entry.target;
-        const lcId = target.getAttribute("data-lc-id");
+      const target = entry.target;
+      const lcId = target.getAttribute("data-lc-id");
+      const config = getConfig();
 
+      if (entry.isIntersecting) {
+        // --- 1단계: 감지 즉시 블러 처리 ---
+        // 이미 처리된 ID가 아니고, 아직 분석 결과가 없는 경우에만 즉시 블러
+        if (!processedIds.has(lcId) && !cleanCache.has(lcId)) {
+          const commentEl = querySelectorWithFallback(target, config.comment, "commentBody");
+          if (commentEl) {
+            commentEl.classList.add("comment-seeding-blur"); // 즉시 가리기
+          }
+        }
+
+        // --- 2단계: 0.8초 체류 확인 후 서버 전송용 큐에 삽입 ---
         const timer = setTimeout(async () => {
           const { serviceActive } = await chrome.storage.local.get("serviceActive");
           if (!serviceActive || processedIds.has(lcId)) return;
 
-          const config = getConfig();
           const commentEl = querySelectorWithFallback(target, config.comment, "commentBody");
           if (commentEl) {
-            applyBlurAndSkeleton(target, config); // 로딩 UI 적용
+            applyBlurAndSkeleton(target, config); // 스켈레톤 UI 적용
             commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
             processedIds.add(lcId);
-          } else {
-            console.warn(`[DOM 매핑 경고] 화면 노출된 댓글에서 본문을 찾을 수 없습니다. lcId=${lcId}`);
           }
         }, 800);
+
         observationTimers.set(target, timer);
       } else {
-        const timer = observationTimers.get(entry.target);
+        // 화면에서 사라지면 타이머 제거
+        const timer = observationTimers.get(target);
         if (timer) {
           clearTimeout(timer);
-          observationTimers.delete(entry.target);
+          observationTimers.delete(target);
         }
       }
     });
@@ -128,7 +138,7 @@ const commentObserver = new IntersectionObserver(
 );
 
 /**
- * [시작점] 에러 방지용 안전 초기화
+ * 에러 방지용 안전 초기화
  */
 const startService = async () => {
   const config = getConfig();
