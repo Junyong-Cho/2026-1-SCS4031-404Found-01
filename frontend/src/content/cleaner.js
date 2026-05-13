@@ -69,35 +69,42 @@ export function extractLcId(href) {
  * @param {HTMLElement} containerEl - 댓글 컨테이너 요소
  * @param {Object} config - 현재 환경 설정 객체
  */
-export function applyBlurAndSkeleton(containerEl, config) {
-  const commentBody = querySelectorWithFallback(containerEl, config.comment, "commentBody");
-  const lcId = containerEl.getAttribute("data-lc-id");
-  console.log(`[스켈레톤 적용 시도] ID: ${lcId}`);
+export async function applyBlurAndSkeleton(containerEl, config) {
+  try {
+    // 1. 서비스 온오프 상태 확인 (기본값 false)
+    const storage = await chrome.storage.local.get("serviceActive");
+    const serviceActive = storage.serviceActive ?? false;
 
-  // 이미 정화된 이력이 캐시에 있다면 즉시 렌더링하고 종료
-  if (cleanCache.has(lcId)) {
-    console.log(`[캐시 히트] 이미 정화된 댓글입니다. 즉시 렌더링: ${lcId}`);
-    renderCleanResult(cleanCache.get(lcId), containerEl, config);
-    return;
-  }
+    // 2. 서비스가 OFF라면 즉시 종료
+    if (!serviceActive) return;
 
-  // 초기 상태: 댓글 본문 블러 처리
-  if (commentBody) {
-    commentBody.classList.add("comment-seeding-blur");
-    console.log("[블러 적용 완료]");
-  } else {
-    console.warn(`[DOM 매핑 경고] 댓글 본문을 찾을 수 없어 블러를 적용하지 않습니다. ID: ${lcId}`);
-  }
+    const lcId = containerEl.getAttribute("data-lc-id") || "no-id";
 
-  // 중복 스켈레톤 생성 방지 및 '세탁 중' 안내 UI 삽입
-  if (containerEl.querySelector(".laundry-loading-skeleton")) return;
+    // 3. 이미 정화된 이력이 캐시에 있다면 즉시 렌더링하고 종료
+    if (cleanCache.has(lcId)) {
+      renderCleanResult(cleanCache.get(lcId), containerEl, config);
+      return;
+    }
 
-  const skeletonEl = document.createElement("div");
-  skeletonEl.className = "laundry-loading-skeleton";
-  skeletonEl.innerHTML = `<div class="laundry-spinner"></div><span>세탁 중...</span>`;
-  containerEl.appendChild(skeletonEl);
+    // 4. 요소 탐색 및 블러 적용 (서버 응답 전까지 즉시 가림)
+    const commentBody = querySelectorWithFallback(containerEl, config.comment, "commentBody");
+    if (commentBody) {
+      commentBody.classList.add("comment-seeding-blur");
+    }
+
+    // 5. 중복 스켈레톤 생성 방지 및 UI 삽입
+    if (containerEl.querySelector(".laundry-loading-skeleton")) return;
+
+    const skeletonEl = document.createElement("div");
+    skeletonEl.className = "laundry-loading-skeleton";
+    skeletonEl.innerHTML = `
+      <div class="laundry-spinner"></div>
+      <span>세탁 중...</span>
+    `;
+
+    containerEl.appendChild(skeletonEl);
+  } catch (err) {}
 }
-
 /**
  * 단일 댓글에 대해 서버로부터 받은 정화 결과(독성 여부, 순화 텍스트 등)를 실제 화면에 반영
  * @param {Object} result - 서버 응답 데이터 ({isToxic, convertedText, id, ...})

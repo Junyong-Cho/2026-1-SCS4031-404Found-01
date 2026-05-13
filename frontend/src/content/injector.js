@@ -33,7 +33,11 @@ const flushQueue = async () => {
   const stepMap = { 1: "blur", 2: "humor", 3: "refine" };
   const payload = {
     userSetting: stepMap[settings.filterStep] || "blur",
-    comments: chunk.map((c) => ({ id: String(c.id), text: String(c.text) })),
+    comments: chunk.map((c) => ({
+      id: String(c.id),
+      text: String(c.text),
+      detectedKeywords: c.detectedKeywords || [],
+    })),
   };
 
   // --- [로그] 서버로 보내는 내용 확인 ---
@@ -101,25 +105,43 @@ const commentObserver = new IntersectionObserver(
       const config = getConfig();
 
       if (entry.isIntersecting) {
-        // --- 1단계: 감지 즉시 블러 처리 ---
-        // 이미 처리된 ID가 아니고, 아직 분석 결과가 없는 경우에만 즉시 블러
-        if (!processedIds.has(lcId) && !cleanCache.has(lcId)) {
-          const commentEl = querySelectorWithFallback(target, config.comment, "commentBody");
-          if (commentEl) {
-            commentEl.classList.add("comment-seeding-blur"); // 즉시 가리기
-          }
+        const { serviceActive, personalKeywords = [] } = await chrome.storage.local.get([
+          "serviceActive",
+          "personalKeywords",
+        ]);
+        if (!serviceActive) return;
+
+        // 이미 분석 결과가 캐시에 있거나, 이미 큐에 들어간 댓글은 무시
+        if (cleanCache.has(lcId) || processedIds.has(lcId)) {
+          if (cleanCache.has(lcId)) applyBlurAndSkeleton(target, config); // 캐시 렌더링용
+          return;
         }
 
-        // --- 2단계: 0.8초 체류 확인 후 서버 전송용 큐에 삽입 ---
-        const timer = setTimeout(async () => {
-          const { serviceActive } = await chrome.storage.local.get("serviceActive");
-          if (!serviceActive || processedIds.has(lcId)) return;
+        // 1. 즉시 블러 실행
+        applyBlurAndSkeleton(target, config);
+
+        if (observationTimers.has(target)) {
+          clearTimeout(observationTimers.get(target));
+        }
+
+        // 2. 0.8초 체류 확인 후 큐 삽입
+        const timer = setTimeout(() => {
+          if (processedIds.has(lcId)) return;
 
           const commentEl = querySelectorWithFallback(target, config.comment, "commentBody");
           if (commentEl) {
-            applyBlurAndSkeleton(target, config); // 스켈레톤 UI 적용
-            commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
+            const text = commentEl.innerText.trim();
+
+            // 로컬 금지어 체크 로직
+            const foundKeywords = personalKeywords.filter((kw) => text.includes(kw));
+
+            commentQueue.push({
+              id: lcId,
+              text: text,
+              detectedKeywords: foundKeywords,
+            });
             processedIds.add(lcId);
+            observationTimers.delete(target);
           }
         }, 800);
 
