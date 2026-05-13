@@ -111,10 +111,13 @@ const commentObserver = new IntersectionObserver(
         ]);
         if (!serviceActive) return;
 
-        // 이미 분석 결과가 캐시에 있거나, 이미 큐에 들어간 댓글은 무시
+        // 1. 이미 처리 완료(캐시)되었거나 현재 큐에서 대기 중(processedIds)이면
         if (cleanCache.has(lcId) || processedIds.has(lcId)) {
-          if (cleanCache.has(lcId)) applyBlurAndSkeleton(target, config); // 캐시 렌더링용
-          return;
+          // 캐시에 있는 경우에만 '화면 업데이트'를 위해 한 번 호출하고 끝냄
+          if (cleanCache.has(lcId)) {
+            renderCleanResult(cleanCache.get(lcId), target, config);
+          }
+          return; // 처리 중인 댓글은 여기서 바로 종료 (applyBlur~ 호출 안 함)
         }
 
         // 1. 즉시 블러 실행
@@ -181,34 +184,9 @@ const startService = async () => {
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.action === "TOGGLE_SERVICE") {
     if (msg.active) {
-      // 클린모드: 이미 본 댓글도 재처리 위해 초기화
-      processedIds.clear();
-
-      // 이미 화면에 보이는 댓글 즉시 처리
-      const config = getConfig();
-      document.querySelectorAll(`${config.container}[data-lc-id]`).forEach((container) => {
-        const lcId = container.getAttribute("data-lc-id");
-
-        if (cleanCache.has(lcId)) {
-          // 캐시 있으면 API 재요청 없이 바로 렌더링
-          const cached = cleanCache.get(lcId);
-          renderCleanResult(cached, container, config);
-        } else if (!processedIds.has(lcId)) {
-          // 캐시 없는 것만 새로 요청
-          const commentEl = querySelectorWithFallback(container, config.comment, "commentBody");
-          if (commentEl) {
-            applyBlurAndSkeleton(container, config);
-            commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
-            processedIds.add(lcId);
-          } else {
-            console.warn(`[DOM 매핑 경고] 전환 시 댓글 본문을 찾을 수 없습니다. lcId=${lcId}`);
-          }
-        }
-      });
-
+      reprocessAllVisibleComments();
       initObservation();
     } else {
-      console.log("[일반모드 전환 - 복원 시작]");
       restoreAllComments(getConfig());
     }
   }
@@ -217,7 +195,6 @@ chrome.runtime.onMessage.addListener((msg) => {
 // 설정 변경 감지 (단계 변경 + 금지어 변경)
 chrome.storage.onChanged.addListener(async (changes, areaName) => {
   if (areaName !== "local") return;
-
   const config = getConfig();
 
   // 1. 단계(filterStep)가 바뀐 경우 -> 기존 캐시 활용해서 화면만 다시 그림
@@ -241,22 +218,7 @@ chrome.storage.onChanged.addListener(async (changes, areaName) => {
 
     // 캐시와 처리된 ID 목록 초기화 (그래야 다시 요청함)
     cleanCache.clear();
-    processedIds.clear();
-
-    // 현재 화면에 보이는 댓글들을 다시 정화 프로세스에 태움
-    document.querySelectorAll(`${config.container}[data-lc-id]`).forEach((container) => {
-      const lcId = container.getAttribute("data-lc-id");
-      const commentEl = querySelectorWithFallback(container, config.comment, "commentBody");
-
-      if (commentEl) {
-        applyBlurAndSkeleton(container, config); // 다시 로딩 표시
-        commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
-        processedIds.add(lcId);
-      }
-    });
-
-    // 큐에 넣었으니 즉시 전송 시도
-    flushQueue();
+    reprocessAllVisibleComments();
   }
 });
 
@@ -265,3 +227,32 @@ setInterval(flushQueue, 1500);
 
 // 즉시 실행
 startService();
+
+/**
+ * 현재 화면에 보이는 모든 댓글을 다시 분석 큐에 넣음
+ * (서비스 시작, 금지어 변경 시 사용)
+ */
+function reprocessAllVisibleComments() {
+  const config = getConfig();
+  processedIds.clear(); // 기존 처리 기록 초기화 (캐시는 유지하되 새로고침 시엔 clear 가능)
+
+  document.querySelectorAll(`${config.container}[data-lc-id]`).forEach((container) => {
+    const lcId = container.getAttribute("data-lc-id");
+
+    // 캐시에 있다면 바로 렌더링
+    if (cleanCache.has(lcId)) {
+      renderCleanResult(cleanCache.get(lcId), container, config);
+      return;
+    }
+
+    // 캐시에 없다면 큐에 삽입
+    const commentEl = querySelectorWithFallback(container, config.comment, "commentBody");
+    if (commentEl && !processedIds.has(lcId)) {
+      applyBlurAndSkeleton(container, config); // 로딩 표시
+      commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
+      processedIds.add(lcId);
+    }
+  });
+
+  if (commentQueue.length > 0) flushQueue();
+}
