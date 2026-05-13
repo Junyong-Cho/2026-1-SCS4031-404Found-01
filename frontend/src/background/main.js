@@ -93,6 +93,7 @@ async function processCleaning(payload, sendResponse) {
 async function sendTokenToBackend(jwt) {
   try {
     // [1단계] 서버 토큰 교환: 구글 JWT를 보내고 우리 서비스 전용 세션 토큰을 받음
+    console.log("구글에서 받아온 원본 JWT:", jwt);
     console.log("1단계: 서버에 구글 JWT 전송 중");
     const loginResponse = await fetch(ENDPOINTS.LOGIN, {
       method: "POST",
