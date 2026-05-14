@@ -2,15 +2,36 @@ import Toastify from "toastify-js";
 import "toastify-js/src/toastify.css";
 
 // 모드(일반/클린) 스타일 업데이트
-export function updateModeUI(isCleanMode) {
-  const modeGeneralLabel = document.getElementById("mode-general");
-  const modeCleanLabel = document.getElementById("mode-clean");
+export function updateModeUI(isCleanMode, DOM) {
+  const {
+    modeGeneralLabel,
+    modeCleanLabel,
+    filterSettings,
+    cleanModePrompt,
+    statisticsCard,
+    personalSettings,
+  } = DOM;
+
+  const setDisplay = (element, value) => {
+    if (element) element.style.display = value;
+  };
+
   if (isCleanMode) {
     modeCleanLabel.classList.add("active");
     modeGeneralLabel.classList.remove("active");
+
+    setDisplay(filterSettings, "flex");
+    setDisplay(cleanModePrompt, "none");
+    setDisplay(statisticsCard, "flex");
+    setDisplay(personalSettings, "block");
   } else {
     modeGeneralLabel.classList.add("active");
     modeCleanLabel.classList.remove("active");
+
+    setDisplay(filterSettings, "none");
+    setDisplay(cleanModePrompt, "block");
+    setDisplay(statisticsCard, "none");
+    setDisplay(personalSettings, "none");
   }
 }
 

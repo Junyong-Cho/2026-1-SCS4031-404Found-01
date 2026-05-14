@@ -12,14 +12,34 @@ export const cleanCache = new Map();
  */
 export const YOUTUBE_CONFIG = {
   container: "ytd-comment-view-model",
-  comment: "#content-text",
-  commentSpan: "#content-text span.ytAttributedStringHost",
-  avatarWrapper: "#author-thumbnail yt-img-shadow",
-  link: "#published-time-text a",
+  comment: ["#content-text", "yt-formatted-string#content-text"],
+  commentSpan: ["#content-text span.ytAttributedStringHost", "#content-text span"],
+  avatarWrapper: ["#author-thumbnail yt-img-shadow", "#author-thumbnail img"],
+  link: ["#published-time-text a", "#header-author a"],
 };
 
 export function getConfig() {
   return YOUTUBE_CONFIG;
+}
+
+export function resolveSelectors(selectors) {
+  return Array.isArray(selectors) ? selectors : [selectors];
+}
+
+export function querySelectorWithFallback(root, selectors, name = "unknown") {
+  const selectorList = resolveSelectors(selectors);
+  for (const selector of selectorList) {
+    const element = root.querySelector(selector);
+    if (element) {
+      if (selectorList.length > 1) {
+        console.debug(`[DOM 매핑] ${name} 선택자 매칭됨: ${selector}`);
+      }
+      return element;
+    }
+  }
+
+  console.warn(`[DOM 매핑 오류] ${name} 요소를 찾지 못했습니다. 시도한 선택자: ${selectorList.join(" | ")}`, root);
+  return null;
 }
 /**
  * 댓글 작성 시간 링크(href)에서 유튜브 댓글의 고유 식별자인 'lc' 값을 추출
@@ -49,35 +69,42 @@ export function extractLcId(href) {
  * @param {HTMLElement} containerEl - 댓글 컨테이너 요소
  * @param {Object} config - 현재 환경 설정 객체
  */
-export function applyBlurAndSkeleton(containerEl, config) {
-  const commentBody = containerEl.querySelector(config.comment);
-  console.log("[블러 대상 요소]", commentBody); // ← 추가
-  console.log("[config.comment 선택자]", config.comment); // ← 추가
-  const lcId = containerEl.getAttribute("data-lc-id");
-  console.log(`[스켈레톤 적용 시도] ID: ${lcId}`);
+export async function applyBlurAndSkeleton(containerEl, config) {
+  try {
+    // 1. 서비스 온오프 상태 확인 (기본값 false)
+    const storage = await chrome.storage.local.get("serviceActive");
+    const serviceActive = storage.serviceActive ?? false;
 
-  // 이미 정화된 이력이 캐시에 있다면 즉시 렌더링하고 종료
-  if (cleanCache.has(lcId)) {
-    console.log(`[캐시 히트] 이미 정화된 댓글입니다. 즉시 렌더링: ${lcId}`);
-    renderCleanResult(cleanCache.get(lcId), containerEl, config);
-    return;
-  }
+    // 2. 서비스가 OFF라면 즉시 종료
+    if (!serviceActive) return;
 
-  // 초기 상태: 댓글 본문 블러 처리
-  if (commentBody) {
-    commentBody.classList.add("comment-seeding-blur");
-    console.log("[블러 적용 완료]");
-  }
+    const lcId = containerEl.getAttribute("data-lc-id") || "no-id";
 
-  // 중복 스켈레톤 생성 방지 및 '세탁 중' 안내 UI 삽입
-  if (containerEl.querySelector(".laundry-loading-skeleton")) return;
+    // 3. 이미 정화된 이력이 캐시에 있다면 즉시 렌더링하고 종료
+    if (cleanCache.has(lcId)) {
+      renderCleanResult(cleanCache.get(lcId), containerEl, config);
+      return;
+    }
 
-  const skeletonEl = document.createElement("div");
-  skeletonEl.className = "laundry-loading-skeleton";
-  skeletonEl.innerHTML = `<div class="laundry-spinner"></div><span>세탁 중...</span>`;
-  containerEl.appendChild(skeletonEl);
+    // 4. 요소 탐색 및 블러 적용 (서버 응답 전까지 즉시 가림)
+    const commentBody = querySelectorWithFallback(containerEl, config.comment, "commentBody");
+    if (commentBody) {
+      commentBody.classList.add("comment-seeding-blur");
+    }
+
+    // 5. 중복 스켈레톤 생성 방지 및 UI 삽입
+    if (containerEl.querySelector(".laundry-loading-skeleton")) return;
+
+    const skeletonEl = document.createElement("div");
+    skeletonEl.className = "laundry-loading-skeleton";
+    skeletonEl.innerHTML = `
+      <div class="laundry-spinner"></div>
+      <span>세탁 중...</span>
+    `;
+
+    containerEl.appendChild(skeletonEl);
+  } catch (err) {}
 }
-
 /**
  * 단일 댓글에 대해 서버로부터 받은 정화 결과(독성 여부, 순화 텍스트 등)를 실제 화면에 반영
  * @param {Object} result - 서버 응답 데이터 ({isToxic, convertedText, id, ...})
@@ -85,8 +112,8 @@ export function applyBlurAndSkeleton(containerEl, config) {
  * @param {Object} config - 설정 객체
  */
 export function renderCleanResult(result, container, config) {
-  const commentBody = container.querySelector(config.comment);
-  const commentSpan = container.querySelector(config.commentSpan);
+  const commentBody = querySelectorWithFallback(container, config.comment, "commentBody");
+  const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
   const skeleton = container.querySelector(".laundry-loading-skeleton");
 
   // 응답이 왔으므로 스켈레톤 UI 제거
@@ -101,7 +128,13 @@ export function renderCleanResult(result, container, config) {
   const existingBadge = container.querySelector(".laundry-clean-badge");
   if (existingBadge) existingBadge.remove();
 
-  if (!commentBody || !commentSpan) return;
+  if (!commentBody || !commentSpan) {
+    console.warn(
+      `[DOM 매핑 오류] renderCleanResult에 필요한 댓글 요소를 찾을 수 없습니다. result.id=${result.id}, container=`,
+      container,
+    );
+    return;
+  }
 
   if (result.isToxic) {
     injectFeedbackButton(container, result); // 피드백 버튼 주입
@@ -124,8 +157,8 @@ export function renderCleanResult(result, container, config) {
 // 일반모드 복원 함수
 export function restoreAllComments(config) {
   document.querySelectorAll("[data-lc-id]").forEach((container) => {
-    const commentSpan = container.querySelector(config.commentSpan);
-    const commentBody = container.querySelector(config.comment);
+    const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
+    const commentBody = querySelectorWithFallback(container, config.comment, "commentBody");
     const badge = container.querySelector(".laundry-clean-badge");
     const skeleton = container.querySelector(".laundry-loading-skeleton");
 
@@ -147,8 +180,11 @@ function injectFeedbackButton(container, result) {
   // 중복 생성 방지
   if (container.querySelector(".laundry-feedback-btn")) return;
 
-  const toolbar = container.querySelector("#toolbar");
-  if (!toolbar) return;
+  const toolbar = querySelectorWithFallback(container, "#toolbar", "toolbar");
+  if (!toolbar) {
+    console.warn(`[DOM 매핑 경고] 피드백 버튼을 삽입할 toolbar 요소를 찾을 수 없습니다. id=${result.id}`);
+    return;
+  }
 
   const feedbackBtn = document.createElement("button");
   feedbackBtn.className = "laundry-feedback-btn";
@@ -232,15 +268,15 @@ export function setupBlurUI(element) {
 }
 
 /**
- * 누적 정화 통계 데이터를 로컬 스토리지에 업데이트하고 팝업 UI에 실시간 알림 전송
- * @param {Object} stats - 서버에서 전달받은 통계 데이터 ({totalScanned, sessionToxicCount})
+ * 정화 통계 데이터를 세션 스토리지에 업데이트하고 팝업 UI에 실시간 알림 전송
+ * @param {Object} stats - 서버에서 전달받은 통계 데이터 ({totalScanned, toxicCount})
  */
 export function updateLaundryStats(stats) {
-  chrome.storage.local.get(["totalComments", "toxicComments"], (res) => {
+  chrome.storage.session.get(["totalComments", "toxicComments"], (res) => {
     const newTotal = (res.totalComments || 0) + (stats.totalScanned || 0);
     const newToxic = (res.toxicComments || 0) + (stats.toxicCount || 0);
 
-    chrome.storage.local.set({ totalComments: newTotal, toxicComments: newToxic }, () => {
+    chrome.storage.session.set({ totalComments: newTotal, toxicComments: newToxic }, () => {
       // 팝업 창에 현재 세션 통계 전송 (팝업이 열려 있을 경우 즉시 반영)
       chrome.runtime.sendMessage({ action: "UPDATE_STATS", totalComments: newTotal, toxicComments: newToxic }, () => {
         if (chrome.runtime.lastError) {
