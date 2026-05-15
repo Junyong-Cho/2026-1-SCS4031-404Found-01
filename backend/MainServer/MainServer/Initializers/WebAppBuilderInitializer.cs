@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using System.Reflection;
+using System.Security.Cryptography;
 
 namespace MainServer.Initializers;
 
@@ -59,7 +60,7 @@ public static class WebAppBuilderInitializer
     /// <param name="builder"></param>
     static void DbConnectionSet(WebApplicationBuilder builder)
     {
-        builder.Services.AddSingleton(NpgsqlDataSource.Create(builder.Configuration.GetConnectionString("Default")!));
+        builder.Services.AddSingleton(NpgsqlDataSource.Create(builder.Configuration.GetConnectionString("Postgres")!));
     }
 
     /// <summary>
@@ -78,7 +79,7 @@ public static class WebAppBuilderInitializer
     /// <param name="builder"></param>
     static void AuthenticationSet(WebApplicationBuilder builder)
     {
-        SymmetricSecurityKey key = new(Convert.FromBase64String(builder.Configuration["SecretKey"]!));
+        SymmetricSecurityKey key = new(RandomNumberGenerator.GetBytes(256));
 
         builder.Services.AddSingleton(new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
         builder.Services.AddSingleton<JsonWebTokenHandler>();

@@ -43,12 +43,16 @@ public static class WebAppInitializer
 
         string query =
 @"create table if not exists users(
-id uuid primary key default uuidv7(),
-user_id varchar(255) unique not null,
+user_id varchar(255) primary key,
 email varchar(255) unique not null
 );
 
-insert into users (user_id, email) values ('admin','admin@example.com') on conflict do nothing;
+create table if not exists forbiden_words(
+user_id varchar(255),
+f_word varchar(255),
+primary key (user_id, f_word),
+constraint user_id_reference foreign key (user_id) references users(user_id) on delete cascade
+);
 ";
         await dbCon.ExecuteAsync(query);
     }
