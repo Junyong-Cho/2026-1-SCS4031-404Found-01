@@ -13,7 +13,7 @@ namespace MainServer.Controllers;
 [Route("/cleaning")]
 public class CleaningCommentsController : ControllerBase
 {
-    //static Random random = new();
+    static Random random = new();
 
     /// <summary>
     /// 정화 요청 처리
@@ -25,7 +25,6 @@ public class CleaningCommentsController : ControllerBase
     [ProducesResponseType<ResponseCleaningCommentsDto>(StatusCodes.Status200OK)]
     public async Task<IResult> RequestCleaningAsync(RequestCleaningCommentsDto comments, IOptions<AIServerInfo> aiServer)
     {
-        /*
         var requestComments = comments.Comments;
         List<ResponseComment> responseComments = new(requestComments.Count);
 
@@ -60,14 +59,13 @@ public class CleaningCommentsController : ControllerBase
             Results = responseComments,
             Stats = stat
         };
-        */
 
-        HttpClient client = new();
+        //HttpClient client = new();
 
-        var res = await client.PostAsJsonAsync(aiServer.Value.RequestURL, comments);
-        Console.WriteLine(res.StatusCode);
-        
-        var response = await res.Content.ReadFromJsonAsync<ResponseCleaningCommentsDto>();
+        //var res = await client.PostAsJsonAsync(aiServer.Value.RequestURL, comments);
+        //Console.WriteLine(res.StatusCode);
+
+        //var response = await res.Content.ReadFromJsonAsync<ResponseCleaningCommentsDto>();
 
         return Results.Ok(response);
     }

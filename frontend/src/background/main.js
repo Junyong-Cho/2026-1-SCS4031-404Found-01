@@ -4,7 +4,7 @@ import { performLogout, fetchIDToken } from "./auth.js";
 /**
  * [공통 설정] 백엔드 API 서버 주소 및 세부 엔드포인트 정의
  */
-const BASE_URL = "https://404foundserver-h3cwawecfch5fbf2.koreacentral-01.azurewebsites.net";
+const BASE_URL = "https://404found-main-cwfvhyehgngaexds.koreacentral-01.azurewebsites.net";
 
 const ENDPOINTS = {
   CLEANING: `${BASE_URL}/cleaning`,

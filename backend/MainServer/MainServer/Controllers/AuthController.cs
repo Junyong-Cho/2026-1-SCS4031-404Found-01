@@ -10,6 +10,7 @@ using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
+using System.Runtime.InteropServices;
 using System.Security.Claims;
 
 namespace MainServer.Controllers;
@@ -21,9 +22,10 @@ namespace MainServer.Controllers;
 [Route("/auth")]
 public class AuthController : ControllerBase
 {
-    const string QUERY_INSERT_USER = "insert into users user_id, email values (@UserId, @Email)";
+    const string QUERY_INSERT_USER = "insert into users (user_id, email) values (@UserId, @Email)";
     const string QUERY_CONFLICT_CHECK = "select exists (select 1 from users where user_id=@UserId)";
     const string QUERY_SELECT_USER = "select user_id, email from users where user_id=@UserId";
+    const string QUERY_SELECT_FORBIDEN_WORDS = "select f_word from forbiden_words where user_id=@UserId";
 
     /// <summary>
     /// 구글 계정으로 가입 API
@@ -104,7 +106,7 @@ public class AuthController : ControllerBase
             ValidateLifetime = true,
             ConfigurationManager = configurationManager
         };
-
+        
         var res = await handler.ValidateTokenAsync(authToken.Token, param);
 
         if (res.IsValid == false)
@@ -116,15 +118,16 @@ public class AuthController : ControllerBase
         if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(email))
             return Results.Unauthorized();
 
+        Console.WriteLine($"{userId} {email}");
+
         await using var dbCon = await dataSource.OpenConnectionAsync();
 
-        UserDto? user = await dbCon.QueryFirstOrDefaultAsync<UserDto>(QUERY_SELECT_USER, new { userId });
+        UserDto user = await dbCon.QueryFirstOrDefaultAsync<UserDto>(QUERY_SELECT_USER, new { userId });
 
-        if (user.HasValue == false)
-            return Results.Unauthorized();
-
-        if (user.Value.UserId != userId || user.Value.Email != email)
-            return Results.Unauthorized();
+        if (string.IsNullOrEmpty(user.UserId))
+        {
+            await dbCon.ExecuteAsync(QUERY_INSERT_USER, new { userId, email });
+        }
 
         SecurityTokenDescriptor descriptor = new()
         {
@@ -137,9 +140,12 @@ public class AuthController : ControllerBase
 
         string tokenString = handler.CreateToken(descriptor);
 
+        var keywords = await dbCon.QueryAsync<string>(QUERY_SELECT_FORBIDEN_WORDS, new { userId });
+
         AuthOkTokenDto responseToken = new()
         {
-            Token = tokenString
+            Token = tokenString,
+            ForbidenWords = keywords.ToList()
         };
 
         return Results.Ok(responseToken);
