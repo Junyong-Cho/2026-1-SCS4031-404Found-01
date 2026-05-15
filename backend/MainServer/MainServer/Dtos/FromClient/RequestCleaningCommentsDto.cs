@@ -30,4 +30,9 @@ public struct RequestComment
     /// 댓글 내용
     /// </summary>
     public string Text { get; set; }
+
+    /// <summary>
+    /// Text에서 감지된 금지어 리스트
+    /// </summary>
+    public List<string> DetectedKeywords { get; set; }
 }

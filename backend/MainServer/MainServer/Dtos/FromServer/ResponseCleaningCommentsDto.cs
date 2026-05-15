@@ -34,7 +34,7 @@ public struct ResponseComment
     /// <summary>
     /// 독성 타입
     /// </summary>
-    public string ToxicType { get; set; }
+    public string? ToxicType { get; set; }
 
     /// <summary>
     /// 정화문
