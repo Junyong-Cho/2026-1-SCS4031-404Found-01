@@ -11,7 +11,24 @@ import {
 } from "./cleaner.js";
 import "./injector.css";
 import "./feedback/feedback.css";
-import { showToast } from "../popup/js/utils.js";
+
+function showToast(message) {
+  const toast = document.createElement("div");
+  toast.textContent = message;
+  Object.assign(toast.style, {
+    position: "fixed",
+    top: "20px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    background: "linear-gradient(to right, #ff5f6d, #ffc371)",
+    color: "white",
+    padding: "10px 20px",
+    borderRadius: "10px",
+    zIndex: "999999",
+  });
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
 
 let commentQueue = [];
 const processedIds = new Set();
