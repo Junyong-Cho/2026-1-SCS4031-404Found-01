@@ -69,6 +69,10 @@ const flushQueue = async () => {
       console.error("[통신 에러]", chrome.runtime.lastError.message);
       return;
     }
+    if (!response || response.error) {
+      console.error("[댓글세탁소] 백그라운드 처리 중 에러가 발생하여 처리를 중단합니다.", response?.error);
+      return;
+    }
 
     console.group(`[서버 응답] 수신 완료`);
     console.log("받은 데이터(Response):", response);

@@ -272,17 +272,15 @@ export function setupBlurUI(element) {
  * @param {Object} stats - 서버에서 전달받은 통계 데이터 ({totalScanned, toxicCount})
  */
 export function updateLaundryStats(stats) {
-  chrome.storage.session.get(["totalComments", "toxicComments"], (res) => {
-    const newTotal = (res.totalComments || 0) + (stats.totalScanned || 0);
-    const newToxic = (res.toxicComments || 0) + (stats.toxicCount || 0);
-
-    chrome.storage.session.set({ totalComments: newTotal, toxicComments: newToxic }, () => {
-      // 팝업 창에 현재 세션 통계 전송 (팝업이 열려 있을 경우 즉시 반영)
-      chrome.runtime.sendMessage({ action: "UPDATE_STATS", totalComments: newTotal, toxicComments: newToxic }, () => {
-        if (chrome.runtime.lastError) {
-          // 팝업이 닫혀 있을 때 발생하는 에러를 조용히 처리
-        }
-      });
-    });
-  });
+  chrome.runtime.sendMessage(
+    {
+      type: "UPDATE_LAUNDRY_STATS",
+      stats: stats,
+    },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        // 대기 중인 응답 에러 발생 시 조용히 처리
+      }
+    },
+  );
 }

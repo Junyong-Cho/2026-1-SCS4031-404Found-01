@@ -51,6 +51,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     processCleaning(request.data, sendResponse);
     return true;
   }
+
+  // 4. 통계 수치 업데이트 처리 (Content Script로부터 수신)
+  if (request.type === "UPDATE_LAUNDRY_STATS") {
+    const stats = request.stats;
+
+    // 브라우저 권한이 확실한 백그라운드 컨텍스트에서 session 스토리지 제어
+    chrome.storage.session.get(["totalComments", "toxicComments"], (res) => {
+      const newTotal = (res.totalComments || 0) + (stats.totalScanned || 0);
+      const newToxic = (res.toxicComments || 0) + (stats.toxicCount || 0);
+
+      chrome.storage.session.set({ totalComments: newTotal, toxicComments: newToxic }, () => {
+        // 팝업 창이 열려 있을 경우에 대비해 실시간 갱신 알림 전송 (닫혀 있으면 알아서 무시됨)
+        chrome.runtime.sendMessage(
+          {
+            action: "UPDATE_STATS",
+            totalComments: newTotal,
+            toxicComments: newToxic,
+          },
+          () => {
+            if (chrome.runtime.lastError) {
+            }
+          },
+        );
+
+        sendResponse({ status: "success" });
+      });
+    });
+    return true; // 비동기 응답
+  }
 });
 
 /**
