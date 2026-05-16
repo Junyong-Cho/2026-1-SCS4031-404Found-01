@@ -90,7 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  /** 차단 키워드 추가 처리 (중복 검사 및 로그인 체크 포함) */
+  /** 맞춤 금지어 추가 처리 */
   const processAddKeyword = () => {
     chrome.storage.local.get(["isLoggedIn", "personalKeywords"], (res) => {
       if (!res.isLoggedIn) {
@@ -98,11 +98,30 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
       const keyword = keywordInput.value.trim();
-
       if (!keyword) return;
-
-      // 중복 등록 방지 로직
       const currentKeywords = res.personalKeywords || [];
+
+      // 개수 제한 (최대 10개)
+      if (currentKeywords.length >= 10) {
+        showToast("키워드는 최대 10개까지만 등록 가능합니다.");
+        keywordInput.value = "";
+        return;
+      }
+
+      // 길이 제한 (1자 이상 10자 이하)
+      if (keyword.length < 1 || keyword.length > 10) {
+        showToast("키워드는 1~10자 사이로 입력해주세요.");
+        return;
+      }
+
+      // 특수문자 제한 (한글, 영문, 숫자만 허용)
+      const regex = /^[가-힣a-zA-Z0-9]+$/;
+      if (!regex.test(keyword)) {
+        showToast("특수문자는 입력할 수 없습니다.");
+        return;
+      }
+
+      // 중복 등록 방지
       if (currentKeywords.includes(keyword)) {
         showToast("이미 등록된 키워드입니다.");
         keywordInput.value = "";

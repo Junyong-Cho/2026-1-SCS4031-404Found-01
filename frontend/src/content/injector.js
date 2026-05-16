@@ -12,6 +12,24 @@ import {
 import "./injector.css";
 import "./feedback/feedback.css";
 
+function showToast(message) {
+  const toast = document.createElement("div");
+  toast.textContent = message;
+  Object.assign(toast.style, {
+    position: "fixed",
+    top: "20px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    background: "linear-gradient(to right, #ff5f6d, #ffc371)",
+    color: "white",
+    padding: "10px 20px",
+    borderRadius: "10px",
+    zIndex: "999999",
+  });
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
 let commentQueue = [];
 const processedIds = new Set();
 const observationTimers = new Map();
@@ -49,6 +67,10 @@ const flushQueue = async () => {
     // --- [로그] 서버에서 온 내용 확인 ---
     if (chrome.runtime.lastError) {
       console.error("[통신 에러]", chrome.runtime.lastError.message);
+      return;
+    }
+    if (!response || response.error) {
+      console.error("[댓글세탁소] 백그라운드 처리 중 에러가 발생하여 처리를 중단합니다.", response?.error);
       return;
     }
 
@@ -180,8 +202,9 @@ const startService = async () => {
   domObserver.observe(document.body, { childList: true, subtree: true });
 };
 
-// TOGGLE_SERVICE 메시지 수신 핸들러
-chrome.runtime.onMessage.addListener((msg) => {
+// 메시지 수신 핸들러
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // 1. 서비스 토글 (ON/OFF)
   if (msg.action === "TOGGLE_SERVICE") {
     if (msg.active) {
       reprocessAllVisibleComments();
@@ -189,6 +212,11 @@ chrome.runtime.onMessage.addListener((msg) => {
     } else {
       restoreAllComments(getConfig());
     }
+  }
+
+  // 2. 우클릭 메뉴 등으로부터 온 토스트 알림
+  if (msg.action === "SHOW_TOAST") {
+    showToast(msg.message);
   }
 });
 

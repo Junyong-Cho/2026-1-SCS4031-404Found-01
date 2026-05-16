@@ -51,6 +51,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     processCleaning(request.data, sendResponse);
     return true;
   }
+
+  // 4. 통계 수치 업데이트 처리 (Content Script로부터 수신)
+  if (request.type === "UPDATE_LAUNDRY_STATS") {
+    const stats = request.stats;
+
+    // 브라우저 권한이 확실한 백그라운드 컨텍스트에서 session 스토리지 제어
+    chrome.storage.session.get(["totalComments", "toxicComments"], (res) => {
+      const newTotal = (res.totalComments || 0) + (stats.totalScanned || 0);
+      const newToxic = (res.toxicComments || 0) + (stats.toxicCount || 0);
+
+      chrome.storage.session.set({ totalComments: newTotal, toxicComments: newToxic }, () => {
+        // 팝업 창이 열려 있을 경우에 대비해 실시간 갱신 알림 전송 (닫혀 있으면 알아서 무시됨)
+        chrome.runtime.sendMessage(
+          {
+            action: "UPDATE_STATS",
+            totalComments: newTotal,
+            toxicComments: newToxic,
+          },
+          () => {
+            if (chrome.runtime.lastError) {
+            }
+          },
+        );
+
+        sendResponse({ status: "success" });
+      });
+    });
+    return true; // 비동기 응답
+  }
 });
 
 /**
@@ -132,4 +161,76 @@ async function sendTokenToBackend(jwt) {
     console.error("통신 흐름 실패:", error.message);
     chrome.storage.local.set({ isLoggedIn: false, userEmail: "" });
   }
+}
+
+/**
+ * [컨텍스트 메뉴] 드래그한 단어 추가 기능
+ */
+
+// 1. 설치 시 메뉴 생성 (텍스트 드래그 시에만 노출)
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "ADD_KEYWORD_MENU",
+    title: "'%s'을(를) 맞춤 금지어로 추가",
+    contexts: ["selection"],
+  });
+});
+
+// 2. 메뉴 클릭 핸들러
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === "ADD_KEYWORD_MENU") {
+    const keyword = info.selectionText.trim();
+
+    // (A) 로그인 체크
+    const { isLoggedIn, personalKeywords = [] } = await chrome.storage.local.get(["isLoggedIn", "personalKeywords"]);
+
+    if (!isLoggedIn) {
+      notifyContentScript(tab.id, "ERROR", "로그인이 필요한 기능입니다.");
+      return;
+    }
+
+    // (B) 유효성 검사 (팝업과 동일한 로직)
+    // 1. 길이 제한 (1~10자)
+    if (keyword.length < 1 || keyword.length > 10) {
+      notifyContentScript(tab.id, "ERROR", "키워드는 1~10자 사이여야 합니다.");
+      return;
+    }
+
+    // 2. 특수문자 제한 (한글, 영문, 숫자만)
+    const regex = /^[가-힣a-zA-Z0-9]+$/;
+    if (!regex.test(keyword)) {
+      notifyContentScript(tab.id, "ERROR", "특수문자는 추가할 수 없습니다.");
+      return;
+    }
+
+    // 3. 중복 체크
+    if (personalKeywords.includes(keyword)) {
+      notifyContentScript(tab.id, "ERROR", "이미 등록된 키워드입니다.");
+      return;
+    }
+
+    // 4. 개수 제한 (10개)
+    if (personalKeywords.length >= 10) {
+      notifyContentScript(tab.id, "ERROR", "키워드는 최대 10개까지만 가능합니다.");
+      return;
+    }
+
+    // (C) 최종 저장
+    const updated = [...personalKeywords, keyword];
+    await chrome.storage.local.set({ personalKeywords: updated });
+
+    // 성공 토스트 알림 지시
+    notifyContentScript(tab.id, "SUCCESS", `'${keyword}' 추가 완료!`);
+  }
+});
+
+/**
+ * 페이지(Content Script)로 알림 메시지 전송
+ */
+function notifyContentScript(tabId, status, message) {
+  chrome.tabs.sendMessage(tabId, {
+    action: "SHOW_TOAST",
+    status: status,
+    message: message,
+  });
 }
