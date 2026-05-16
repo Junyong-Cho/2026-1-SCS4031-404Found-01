@@ -11,6 +11,7 @@ import {
 } from "./cleaner.js";
 import "./injector.css";
 import "./feedback/feedback.css";
+import { showToast } from "../popup/js/utils.js";
 
 let commentQueue = [];
 const processedIds = new Set();
@@ -180,8 +181,9 @@ const startService = async () => {
   domObserver.observe(document.body, { childList: true, subtree: true });
 };
 
-// TOGGLE_SERVICE 메시지 수신 핸들러
-chrome.runtime.onMessage.addListener((msg) => {
+// 메시지 수신 핸들러
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // 1. 서비스 토글 (ON/OFF)
   if (msg.action === "TOGGLE_SERVICE") {
     if (msg.active) {
       reprocessAllVisibleComments();
@@ -189,6 +191,11 @@ chrome.runtime.onMessage.addListener((msg) => {
     } else {
       restoreAllComments(getConfig());
     }
+  }
+
+  // 2. 우클릭 메뉴 등으로부터 온 토스트 알림
+  if (msg.action === "SHOW_TOAST") {
+    showToast(msg.message);
   }
 });
 
