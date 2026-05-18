@@ -9,6 +9,7 @@ import random
 from models.label_classifier import LabelClassifier
 from models.refiner import Refiner
 from models.toxic_classifier import ToxicClassifier
+from models.humor import replace_humor_words
 
 # 독성 판단 실패 시 예외처리
 class ToxicClassificationError(Exception): 
@@ -158,6 +159,39 @@ def refine_comment(comment: str):
 
     return final_result
 
+#humor 모드
+def humor_comment(comment: str):
+
+    toxic_result = predict_toxic_retry(comment)
+
+    if toxic_result["label"] == "non-toxic":
+        return {
+            "original_text": comment,
+            "refined_text": comment,
+            "process_type": "pass",
+            "labels": [],
+            "label_status": "not_executed",
+            "label_error": "",
+            "toxic_result": toxic_result
+        }
+
+    label_info = predict_labels_retry(comment)
+
+    labels = label_info["labels"]
+    label_status = label_info["label_status"]
+    label_error = label_info["label_error"]
+
+    final_result = replace_humor_words(
+        comment,
+        bad_words
+    )
+
+    final_result["labels"] = labels
+    final_result["label_status"] = label_status
+    final_result["label_error"] = label_error
+    final_result["toxic_result"] = toxic_result
+
+    return final_result
 
 def main():
     #테스트용
