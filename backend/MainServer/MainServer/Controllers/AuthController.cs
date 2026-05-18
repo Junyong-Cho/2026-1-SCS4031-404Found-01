@@ -2,7 +2,6 @@
 using MainServer.Dtos.FromClient;
 using MainServer.Dtos.FromServer;
 using MainServer.Infos;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -10,8 +9,6 @@ using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
-using System.Runtime.InteropServices;
-using System.Security.Claims;
 
 namespace MainServer.Controllers;
 
@@ -106,17 +103,26 @@ public class AuthController : ControllerBase
             ValidateLifetime = true,
             ConfigurationManager = configurationManager
         };
-        
+
         var res = await handler.ValidateTokenAsync(authToken.Token, param);
 
         if (res.IsValid == false)
+        {
+            Console.WriteLine("1차 인증 실패");
+
+            Console.WriteLine(res.Exception);
+
             return Results.Unauthorized();
+        }
 
         string userId = res.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? string.Empty;
         string email = res.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Email)?.Value ?? string.Empty;
 
         if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(email))
+        {
+            Console.WriteLine($"2차 인증 실패\nUserId: {userId}\nEmail: {email}");
             return Results.Unauthorized();
+        }
 
         Console.WriteLine($"{userId} {email}");
 
