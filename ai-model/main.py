@@ -102,17 +102,18 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 classifier = LabelClassifier(
     client=client,
-    model_name="gpt-5.4-mini"
+    #model_name="gpt-5.4-mini"
+    model_name="gpt-4o-mini"
 )
 
 refiner = Refiner(
     client=client,
-    model_name="gpt-5.4-mini"
+    model_name="gpt-4o-mini"
 )
 
 toxic_classifier = ToxicClassifier(
     client=client,
-    model_name="gpt-5.4-mini"
+    model_name="gpt-4o-mini"
 )
 
 bad_words = load_bad_words("models/profanityDict_result_v2.csv")
