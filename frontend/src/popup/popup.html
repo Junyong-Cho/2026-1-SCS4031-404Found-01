@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <nav class="toggle-shell">
+      <button id="mode-general" class="mode-tab active" type="button">일반 모드</button>
+      <button id="mode-clean" class="mode-tab" type="button">클린 모드</button>
+      <div class="mode-track"></div>
+      <div class="mode-indicator"></div>
+      <input type="checkbox" id="service-onoff" hidden />
+    </nav>
+    <div id="user-info-bar" class="user-bar" style="display: none">
+      <span id="user-email"></span>
+      <button id="btn-logout" type="button">로그아웃</button>
+    </div>
+    <div class="container">
+      <section class="filter-settings">
+        <div class="filter-item">
+          <div class="step-info">
+            <span class="step-label">1단계 (Blur)</span>
+            <p class="step-description">부적절한 단어를 블러 처리하여 내용을 숨깁니다.</p>
+          </div>
+          <label class="switch">
+            <input type="radio" name="filterStep" value="1" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="filter-item">
+          <div class="step-info">
+            <span class="step-label">2단계 (Humor)</span>
+            <p class="step-description">유머러스한 표현으로 대체하여 재미있게 필터링합니다.</p>
+          </div>
+          <label class="switch">
+            <input type="radio" name="filterStep" value="2" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="filter-item">
+          <div class="step-info">
+            <span class="step-label">3단계 (Refined)</span>
+            <p class="step-description">정제된 표현으로 대체하여 건전한 환경을 만듭니다.</p>
+          </div>
+          <label class="switch">
+            <input type="radio" name="filterStep" value="3" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <section class="clean-mode-prompt" style="display: none">
+        <div class="prompt-card">
+          <h4>정화를 위해 클린 모드를 켜주세요!</h4>
+          <p>
+            일반 모드에서는 서비스가 꺼져 있어 필터링이 작동하지 않습니다. 깨끗한 댓글 환경을 위해 클린 모드를
+            활성화하세요.
+          </p>
+        </div>
+      </section>
+
+      <section class="statistics-card">
+        <div class="stats-info">
+          <h4>Statistics</h4>
+          <p>감지된 댓글 : <span id="total-count">0</span></p>
+          <p>감지된 악플 : <span id="toxic-count" class="highlight">0</span> (0%)</p>
+        </div>
+        <div class="stats-chart">
+          <div class="pie-chart" id="stats-pie-chart"><span>0</span></div>
+        </div>
+      </section>
+
+      <section class="personal-settings">
+        <div class="section-header">
+          <h4>맞춤 금지어 설정</h4>
+        </div>
+        <div class="keyword-input-group">
+          <input type="text" id="keyword-input" placeholder="차단할 단어 입력" />
+          <button id="add-keyword">추가</button>
+        </div>
+        <div id="keyword-tags" class="tag-container"></div>
+      </section>
+    </div>
+    <script type="module" src="js/popup.js"></script>
+  </body>
+</html>
