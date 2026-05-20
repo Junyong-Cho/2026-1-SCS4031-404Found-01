@@ -64,20 +64,23 @@ const flushQueue = async () => {
   console.groupEnd();
 
   chrome.runtime.sendMessage({ type: "PROCESS_COMMENTS", data: payload }, (response) => {
-    // --- [로그] 서버에서 온 내용 확인 ---
+    // --- [1. 크롬 자체 통신 에러 방어] ---
     if (chrome.runtime.lastError) {
       console.error("[통신 에러]", chrome.runtime.lastError.message);
       return;
     }
+
+    // 🛡️ [2. 백엔드/백그라운드 에러 최상단 방어]
     if (!response || response.error) {
       console.error("[댓글세탁소] 백그라운드 처리 중 에러가 발생하여 처리를 중단합니다.", response?.error);
       return;
     }
 
+    // --- [3. 안전이 확보된 후에 로그 출력 및 렌더링] ---
     console.group(`[서버 응답] 수신 완료`);
     console.log("받은 데이터(Response):", response);
 
-    if (response?.results) {
+    if (response.results) {
       console.log(`성공적으로 ${response.results.length}개의 분석 결과를 가져왔습니다.`);
       renderCleanResults(response);
     } else {

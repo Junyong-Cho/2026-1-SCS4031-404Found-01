@@ -41,6 +41,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // (A) 영구 저장 데이터 (local): 설정, 키워드, 로그인 정보
   chrome.storage.local.get(["filterStep", "serviceActive", "personalKeywords", "userEmail", "isLoggedIn"], (res) => {
+    console.log("[팝업 로드] 스토리지 데이터 확인:", res);
+
     // (1) 정화 단계 라디오 복구
     if (res.filterStep) {
       const targetRadio = document.querySelector(`input[value="${res.filterStep}"]`);
@@ -78,7 +80,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /** 로그인 필요 안내 및 로그인 프로세스 시작 */
   function handleLoginRequired(e) {
     e.preventDefault();
-    if (confirm("맞춤 키워드 설정은 로그인이 필요합니다.\n구글 로그인을 진행하시겠습니까?")) {
+    if (confirm("맞춤 금지어 설정은 로그인이 필요합니다.\n구글 로그인을 진행하시겠습니까?")) {
       chrome.runtime.sendMessage({ action: "login" }, () => window.close());
     }
   }
@@ -128,10 +130,23 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // 태그 UI 추가 및 저장소 업데이트
-      addTag(keyword, keywordTagsContainer);
-      keywordInput.value = "";
-      saveKeywords(keywordTagsContainer);
+      chrome.runtime.sendMessage(
+        {
+          type: "ADD_SERVER_KEYWORD",
+          keyword: keyword,
+        },
+        (response) => {
+          if (response?.status === "success") {
+            // 서버 등록에 성공했을 때만 로컬 화면 및 저장소에 반영
+            addTag(keyword, keywordTagsContainer);
+            keywordInput.value = "";
+            saveKeywords(keywordTagsContainer);
+            showToast(`'${keyword}' 단어가 추가되었습니다.`);
+          } else {
+            showToast("서버에 키워드를 추가하지 못했습니다.");
+          }
+        },
+      );
     });
   };
 

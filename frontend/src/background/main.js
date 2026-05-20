@@ -8,8 +8,8 @@ const BASE_URL = "https://404found-main-cwfvhyehgngaexds.koreacentral-01.azurewe
 
 const ENDPOINTS = {
   CLEANING: `${BASE_URL}/cleaning`,
-  LOGIN: `${BASE_URL}/test/google-tokentest`,
-  USER_INFO: `${BASE_URL}/test/test`,
+  SIGNIN: `${BASE_URL}/auth/google-signin`,
+  FORBIDDEN_WORD: `${BASE_URL}/forbidden-word`,
 };
 
 /**
@@ -22,9 +22,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // 구글 토큰 획득 성공 시: 백엔드 서버로 전송하여 세션 확립
       (jwt) => sendTokenToBackend(jwt),
       // 구글 로그인 취소/실패 시: 취소 메시지 브로드캐스팅
-      () => chrome.runtime.sendMessage({ action: "loginCancelled" }),
+      () =>
+        chrome.runtime.sendMessage({ action: "loginCancelled" }, () => {
+          void chrome.runtime.lastError;
+        }),
     );
     sendResponse({ status: "인증 프로세스 시작됨" });
+    return true;
   }
 
   // 2. 로그아웃 요청 처리
@@ -62,7 +66,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const newToxic = (res.toxicComments || 0) + (stats.toxicCount || 0);
 
       chrome.storage.session.set({ totalComments: newTotal, toxicComments: newToxic }, () => {
-        // 팝업 창이 열려 있을 경우에 대비해 실시간 갱신 알림 전송 (닫혀 있으면 알아서 무시됨)
         chrome.runtime.sendMessage(
           {
             action: "UPDATE_STATS",
@@ -70,17 +73,56 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             toxicComments: newToxic,
           },
           () => {
-            if (chrome.runtime.lastError) {
-            }
+            const _ = chrome.runtime.lastError;
           },
         );
 
         sendResponse({ status: "success" });
       });
     });
-    return true; // 비동기 응답
+    return true;
+  }
+
+  // 5. 서버 금지어 추가 요청 처리
+  if (request.type === "ADD_SERVER_KEYWORD") {
+    syncKeywordWithServer("POST", { word: request.keyword }, sendResponse);
+    return true;
+  }
+
+  // 6. 서버 금지어 삭제 요청 처리
+  if (request.type === "DELETE_SERVER_KEYWORD") {
+    syncKeywordWithServer("DELETE", { word: request.keyword }, sendResponse);
+    return true;
   }
 });
+
+/**
+ * 백엔드 서버로 금지어 동기화 API 호출
+ * @param {string} method - "POST" (추가) 또는 "DELETE" (삭제)
+ * @param {Object} body - 전송할 데이터 객체 ({ word: "단어" })
+ */
+async function syncKeywordWithServer(method, body, sendResponse) {
+  try {
+    const { serverToken } = await chrome.storage.local.get("serverToken");
+
+    const response = await fetch(ENDPOINTS.FORBIDDEN_WORD, {
+      method: method,
+      headers: {
+        Authorization: `Bearer ${serverToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) throw new Error(`서버 응답 에러: ${response.status}`);
+
+    // 정상 처리 완료 응답 회신
+    sendResponse({ status: "success" });
+  } catch (error) {
+    console.error(`서버 금지어 동기화 실패 (${method}):`, error);
+    sendResponse({ status: "error", error: error.message });
+  }
+}
 
 /**
  * [함수] processCleaning
@@ -120,44 +162,44 @@ async function processCleaning(payload, sendResponse) {
  * 역할: 구글 토큰을 우리 서버 토큰으로 교환하고, 유저 정보를 확인하여 최종 로그인 처리
  */
 async function sendTokenToBackend(jwt) {
+  console.log("JWT 전체:", jwt);
+
+  // JWT 디코딩해서 내용 확인
   try {
-    // [1단계] 서버 토큰 교환: 구글 JWT를 보내고 우리 서비스 전용 세션 토큰을 받음
-    console.log("구글에서 받아온 원본 JWT:", jwt);
-    console.log("1단계: 서버에 구글 JWT 전송 중");
-    const loginResponse = await fetch(ENDPOINTS.LOGIN, {
+    const decoded = JSON.parse(atob(jwt.split(".")[1]));
+    console.log("JWT 페이로드:", decoded);
+    console.log("만료시간:", new Date(decoded.exp * 1000));
+  } catch (e) {
+    console.error("JWT 디코딩 실패 - 토큰이 이상함:", e);
+  }
+
+  try {
+    const signinResponse = await fetch(ENDPOINTS.SIGNIN, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${jwt}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: jwt }),
     });
 
-    if (!loginResponse.ok) throw new Error(`로그인 서버 에러: ${loginResponse.status}`);
-    const loginData = await loginResponse.json();
-    const serverToken = loginData.token;
+    if (!signinResponse.ok) throw new Error(`로그인 서버 에러: ${signinResponse.status}`);
 
-    // 발급받은 서버 전용 토큰을 로컬 저장소에 보관
-    await chrome.storage.local.set({ serverToken });
+    const signinData = await signinResponse.json();
+    const { token: serverToken, forbidenWords } = signinData;
 
-    // [2단계] 유저 정보 조회: 발급받은 서버 토큰을 사용하여 유저의 상세 정보 확인
-    console.log("2단계: 사용자 정보 조회를 시도합니다...");
-    const infoResponse = await fetch(ENDPOINTS.USER_INFO, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${serverToken}` },
+    // 3단계: 저장 및 완료 처리
+    await chrome.storage.local.set({
+      serverToken,
+      isLoggedIn: true,
+      personalKeywords: forbidenWords || [],
     });
 
-    if (!infoResponse.ok) throw new Error(`정보 조회 에러: ${infoResponse.status}`);
-    const infoData = await infoResponse.json();
+    // 유저 이메일은 JWT 디코딩으로 추출 (서버 별도 호출 불필요)
+    const payload = JSON.parse(atob(jwt.split(".")[1]));
+    await chrome.storage.local.set({ userEmail: payload.email });
 
-    // [3단계] 최종 완료 처리: 유저 이메일 저장 및 팝업창에 로그인 성공 알림
-    if (infoData.email) {
-      chrome.storage.local.set({ userEmail: infoData.email, isLoggedIn: true }, () => {
-        chrome.runtime.sendMessage({ action: "loginFinished", email: infoData.email });
-      });
-    }
+    chrome.runtime.sendMessage({ action: "loginFinished", email: payload.email }, () => {
+      void chrome.runtime.lastError;
+    });
   } catch (error) {
-    // 에러 발생 시 로그인 상태 초기화
     console.error("통신 흐름 실패:", error.message);
     chrome.storage.local.set({ isLoggedIn: false, userEmail: "" });
   }
@@ -228,9 +270,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
  * 페이지(Content Script)로 알림 메시지 전송
  */
 function notifyContentScript(tabId, status, message) {
-  chrome.tabs.sendMessage(tabId, {
-    action: "SHOW_TOAST",
-    status: status,
-    message: message,
-  });
+  chrome.tabs.sendMessage(
+    tabId,
+    {
+      action: "SHOW_TOAST",
+      status: status,
+      message: message,
+    },
+    () => void chrome.runtime.lastError,
+  );
 }
