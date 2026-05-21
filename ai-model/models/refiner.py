@@ -1,15 +1,15 @@
 # refiner.py
 
 import json
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 
 class Refiner:
-    def __init__(self, client: OpenAI, model_name: str):
+    def __init__(self, client: AsyncOpenAI, model_name: str):
         self.client = client
         self.model_name = model_name
 
-    def refine(self, text: str) -> dict:
+    async def refine(self, text: str) -> dict:
         prompt = f"""
 너는 한국어 온라인 댓글을 '의미를 유지한 채 정화'하는 문장 정제기다.
 
@@ -162,7 +162,7 @@ class Refiner:
 }}
 """
 
-        response = self.client.responses.create(
+        response = await self.client.responses.create(
             model=self.model_name,
             input=prompt
         )
