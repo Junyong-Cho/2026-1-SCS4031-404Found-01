@@ -1,15 +1,15 @@
 #toxic_classifier.py (mvp.gpt)
 
 import json
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 
 class ToxicClassifier:
-    def __init__(self, client: OpenAI, model_name: str):
+    def __init__(self, client: AsyncOpenAI, model_name: str):
         self.client = client
         self.model_name = model_name
 
-    def predict(self, text: str) -> dict: #입력:댓글, 출력:결과 dict
+    async def predict(self, text: str) -> dict: #입력:댓글, 출력:결과 dict
         prompt = f"""
 너는 한국어 온라인 댓글의 독성 여부를 판별하는 분류기다.
 
@@ -66,7 +66,7 @@ class ToxicClassifier:
 """
 
 #gpt 호출
-        response = self.client.responses.create(
+        response = await self.client.responses.create(
             model=self.model_name,
             input=prompt
         )
