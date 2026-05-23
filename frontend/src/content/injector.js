@@ -155,6 +155,14 @@ const commentObserver = new IntersectionObserver(
             // 로컬 금지어 체크 로직
             const foundKeywords = personalKeywords.filter((kw) => text.includes(kw));
 
+            if (foundKeywords.length > 0) {
+              foundKeywords.forEach((kw) => {
+                // 댓글 텍스트 내의 금지어를 전부 '아잉'으로 교체
+                const regex = new RegExp(kw, "g");
+                text = text.replace(regex, "아잉");
+              });
+            }
+
             commentQueue.push({
               id: lcId,
               text: text,
