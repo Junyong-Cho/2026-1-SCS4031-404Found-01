@@ -39,13 +39,12 @@ const MAX_BATCH_SIZE = 15; // 한 번에 보낼 최대 댓글 수
 /**
  * 큐 처리 로직 (설정에 따라 분기)
  */
+const MAX_RETRY = 2; // 최대 재시도 횟수
+
 const flushQueue = async () => {
   const settings = await chrome.storage.local.get(["serviceActive", "filterStep"]);
-
-  // 서비스가 비활성화 상태이거나 전송할 댓글이 없으면 종료
   if (!settings.serviceActive || commentQueue.length === 0) return;
 
-  // 큐에서 최대 15개까지만 잘라내기 (남은 건 다음 1.5초 주기에 처리)
   const chunk = commentQueue.splice(0, MAX_BATCH_SIZE);
 
   const stepMap = { 1: "blur", 2: "refine" };
@@ -58,35 +57,28 @@ const flushQueue = async () => {
     })),
   };
 
-  // --- [로그] 서버로 보내는 내용 확인 ---
-  console.group(`[서버 전송] 총 ${chunk.length}개 댓글 발송`);
-  console.log("전송 데이터(Payload):", payload);
-  console.groupEnd();
-
   chrome.runtime.sendMessage({ type: "PROCESS_COMMENTS", data: payload }, (response) => {
-    // --- [1. 크롬 자체 통신 에러 방어] ---
-    if (chrome.runtime.lastError) {
-      console.error("[통신 에러]", chrome.runtime.lastError.message);
+    if (chrome.runtime.lastError || !response || response.error) {
+      console.error("[청크 전송 실패] 재시도 큐에 반환합니다.");
+
+      // 실패한 댓글만 재시도 횟수 증가 후 필터링
+      const retryChunk = chunk
+        .map((c) => ({ ...c, _retryCount: (c._retryCount || 0) + 1 }))
+        .filter((c) => c._retryCount <= MAX_RETRY);
+
+      if (retryChunk.length > 0) {
+        commentQueue.unshift(...retryChunk); // 큐 앞에 다시 삽입
+      }
+
+      const dropped = chunk.length - retryChunk.length;
+      if (dropped > 0) console.warn(`[재시도 초과] ${dropped}개 댓글 분석을 포기했습니다.`);
       return;
     }
 
-    // [2. 백엔드/백그라운드 에러 최상단 방어]
-    if (!response || response.error) {
-      console.error("[댓글세탁소] 백그라운드 처리 중 에러가 발생하여 처리를 중단합니다.", response?.error);
-      return;
-    }
-
-    // --- [3. 안전이 확보된 후에 로그 출력 및 렌더링] ---
-    console.group(`[서버 응답] 수신 완료`);
-    console.log("받은 데이터(Response):", response);
-
+    // 성공 시
     if (response.results) {
-      console.log(`성공적으로 ${response.results.length}개의 분석 결과를 가져왔습니다.`);
       renderCleanResults(response);
-    } else {
-      console.warn("서버 응답 형식이 올바르지 않거나 결과가 없습니다.");
     }
-    console.groupEnd();
   });
 };
 
@@ -166,7 +158,6 @@ const commentObserver = new IntersectionObserver(
             commentQueue.push({
               id: lcId,
               text: text,
-              detectedKeywords: foundKeywords,
             });
             processedIds.add(lcId);
             observationTimers.delete(target);
@@ -207,17 +198,17 @@ const startService = async () => {
 
 // 메시지 수신 핸들러
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // 1. 서비스 토글 (ON/OFF)
   if (msg.action === "TOGGLE_SERVICE") {
     if (msg.active) {
+      cleanCache.clear();
       reprocessAllVisibleComments();
       initObservation();
     } else {
+      commentQueue = [];
       restoreAllComments(getConfig());
     }
+    sendResponse({ status: "반영 완료" });
   }
-
-  // 2. 우클릭 메뉴 등으로부터 온 토스트 알림
   if (msg.action === "SHOW_TOAST") {
     showToast(msg.message);
   }

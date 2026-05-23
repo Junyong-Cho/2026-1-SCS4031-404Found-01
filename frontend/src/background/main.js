@@ -9,7 +9,7 @@ const BASE_URL = "https://404found-main-cwfvhyehgngaexds.koreacentral-01.azurewe
 const ENDPOINTS = {
   CLEANING: `${BASE_URL}/cleaning`,
   SIGNIN: `${BASE_URL}/auth/google-signin`,
-  FORBIDDEN_WORD: `${BASE_URL}/forbidden-word`,
+  FORBID_BASE: `${BASE_URL}/forbid`,
 };
 
 /**
@@ -85,43 +85,65 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // 5. 서버 금지어 추가 요청 처리
   if (request.type === "ADD_SERVER_KEYWORD") {
-    syncKeywordWithServer("POST", { word: request.keyword }, sendResponse);
+    syncKeywordWithServer("GET", `add/${encodeURIComponent(request.keyword)}`, sendResponse);
     return true;
   }
 
   // 6. 서버 금지어 삭제 요청 처리
   if (request.type === "DELETE_SERVER_KEYWORD") {
-    syncKeywordWithServer("DELETE", { word: request.keyword }, sendResponse);
+    syncKeywordWithServer("DELETE", `delete/${encodeURIComponent(request.keyword)}`, sendResponse);
     return true;
   }
 });
 
 /**
- * 백엔드 서버로 금지어 동기화 API 호출
- * @param {string} method - "POST" (추가) 또는 "DELETE" (삭제)
- * @param {Object} body - 전송할 데이터 객체 ({ word: "단어" })
+ * 백엔드 서버로 금지어 동기화 API 호출 (패스 파라미터 방식 반영)
+ * @param {string} method - "GET" 또는 "DELETE"
+ * @param {string} subPath - 추가 시 "add/단어", 삭제 시 "delete/단어"
+ * @param {Function} sendResponse - 프론트엔드로 결과를 보낼 콜백 함수
  */
-async function syncKeywordWithServer(method, body, sendResponse) {
+async function syncKeywordWithServer(method, subPath, sendResponse) {
   try {
     const { serverToken } = await chrome.storage.local.get("serverToken");
 
-    const response = await fetch(ENDPOINTS.FORBIDDEN_WORD, {
+    // 토큰 자체가 없으면 만료 처리하지 않고 그냥 에러 반환
+    if (!serverToken) {
+      sendResponse({ status: "error", error: "로그인이 필요합니다." });
+      return;
+    }
+
+    const targetUrl = `${ENDPOINTS.FORBID_BASE}/${subPath}`;
+    const response = await fetch(targetUrl, {
       method: method,
       headers: {
         Authorization: `Bearer ${serverToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(body),
     });
 
-    if (!response.ok) throw new Error(`서버 응답 에러: ${response.status}`);
+    if (response.status === 401) {
+      // 현재 저장된 토큰과 요청에 사용한 토큰이 같을 때만 만료 처리
+      const { serverToken: currentToken } = await chrome.storage.local.get("serverToken");
+      if (currentToken === serverToken) {
+        handleTokenExpired();
+      }
+      throw new Error("다시 로그인해주세요.");
+    }
 
-    // 정상 처리 완료 응답 회신
+    if (!response.ok) throw new Error(`서버 응답 에러: ${response.status}`);
     sendResponse({ status: "success" });
   } catch (error) {
     console.error(`서버 금지어 동기화 실패 (${method}):`, error);
     sendResponse({ status: "error", error: error.message });
   }
+}
+
+function handleTokenExpired() {
+  performLogout(() => {
+    chrome.runtime.sendMessage({ action: "loginCancelled" }, () => {
+      void chrome.runtime.lastError;
+    });
+  });
 }
 
 /**
@@ -192,7 +214,7 @@ async function sendTokenToBackend(jwt) {
       personalKeywords: forbidenWords || [],
     });
 
-    // 유저 이메일은 JWT 디코딩으로 추출 (서버 별도 호출 불필요)
+    // 유저 이메일은 JWT 디코딩으로 추출
     const payload = JSON.parse(atob(jwt.split(".")[1]));
     await chrome.storage.local.set({ userEmail: payload.email });
 
@@ -203,80 +225,4 @@ async function sendTokenToBackend(jwt) {
     console.error("통신 흐름 실패:", error.message);
     chrome.storage.local.set({ isLoggedIn: false, userEmail: "" });
   }
-}
-
-/**
- * [컨텍스트 메뉴] 드래그한 단어 추가 기능
- */
-
-// 1. 설치 시 메뉴 생성 (텍스트 드래그 시에만 노출)
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: "ADD_KEYWORD_MENU",
-    title: "'%s'을(를) 맞춤 금지어로 추가",
-    contexts: ["selection"],
-  });
-});
-
-// 2. 메뉴 클릭 핸들러
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === "ADD_KEYWORD_MENU") {
-    const keyword = info.selectionText.trim();
-
-    // (A) 로그인 체크
-    const { isLoggedIn, personalKeywords = [] } = await chrome.storage.local.get(["isLoggedIn", "personalKeywords"]);
-
-    if (!isLoggedIn) {
-      notifyContentScript(tab.id, "ERROR", "로그인이 필요한 기능입니다.");
-      return;
-    }
-
-    // (B) 유효성 검사 (팝업과 동일한 로직)
-    // 1. 길이 제한 (1~10자)
-    if (keyword.length < 1 || keyword.length > 10) {
-      notifyContentScript(tab.id, "ERROR", "키워드는 1~10자 사이여야 합니다.");
-      return;
-    }
-
-    // 2. 특수문자 제한 (한글, 영문, 숫자만)
-    const regex = /^[가-힣a-zA-Z0-9]+$/;
-    if (!regex.test(keyword)) {
-      notifyContentScript(tab.id, "ERROR", "특수문자는 추가할 수 없습니다.");
-      return;
-    }
-
-    // 3. 중복 체크
-    if (personalKeywords.includes(keyword)) {
-      notifyContentScript(tab.id, "ERROR", "이미 등록된 키워드입니다.");
-      return;
-    }
-
-    // 4. 개수 제한 (10개)
-    if (personalKeywords.length >= 10) {
-      notifyContentScript(tab.id, "ERROR", "키워드는 최대 10개까지만 가능합니다.");
-      return;
-    }
-
-    // (C) 최종 저장
-    const updated = [...personalKeywords, keyword];
-    await chrome.storage.local.set({ personalKeywords: updated });
-
-    // 성공 토스트 알림 지시
-    notifyContentScript(tab.id, "SUCCESS", `'${keyword}' 추가 완료!`);
-  }
-});
-
-/**
- * 페이지(Content Script)로 알림 메시지 전송
- */
-function notifyContentScript(tabId, status, message) {
-  chrome.tabs.sendMessage(
-    tabId,
-    {
-      action: "SHOW_TOAST",
-      status: status,
-      message: message,
-    },
-    () => void chrome.runtime.lastError,
-  );
 }

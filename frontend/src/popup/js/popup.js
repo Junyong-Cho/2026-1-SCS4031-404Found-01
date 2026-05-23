@@ -37,6 +37,25 @@ document.addEventListener("DOMContentLoaded", () => {
     personalSettings: document.querySelector(".personal-settings"),
   };
 
+  // --- 1-2. 공통 함수: 설정 변경 시 유튜브 실시간 동기화 신호 전송 ---
+  function sendConfigChangeToYoutube() {
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+      if (tabs[0] && tabs[0].url?.includes("youtube.com")) {
+        chrome.tabs.sendMessage(
+          tabs[0].id,
+          {
+            action: "TOGGLE_SERVICE",
+            active: mainToggle.checked, // 현재 메인 토글의 ON/OFF 상태를 함께 전송
+          },
+          (response) => {
+            // 통신 예외 또는 무응답 방어용 처리
+            void chrome.runtime.lastError;
+          },
+        );
+      }
+    });
+  }
+
   // --- 2. 초기 데이터 로드 (저장소 분리 호출) ---
 
   // (A) 영구 저장 데이터 (local): 설정, 키워드, 로그인 정보
@@ -143,6 +162,7 @@ document.addEventListener("DOMContentLoaded", () => {
             keywordInput.value = "";
             saveKeywords(keywordTagsContainer);
             showToast(`'${keyword}' 단어가 추가되었습니다.`);
+            sendConfigChangeToYoutube();
           } else {
             showToast("서버에 키워드를 추가하지 못했습니다.");
           }
@@ -171,7 +191,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /** 정화 단계 라디오 버튼 변경 시 저장 */
   stepRadios.forEach((r) =>
-    r.addEventListener("change", (e) => chrome.storage.local.set({ filterStep: e.target.value })),
+    r.addEventListener("change", (e) => {
+      chrome.storage.local.set({ filterStep: e.target.value }, () => {
+        sendConfigChangeToYoutube();
+      });
+    }),
   );
 
   /**
@@ -216,10 +240,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // --- 5. 외부 메시지 수신 (백그라운드 등으로부터) ---
+  // --- 5. 외부 메시지 수신  ---
   chrome.runtime.onMessage.addListener((msg) => {
-    // 로그인 취소 알림
-    if (msg.action === "loginCancelled") showToast("로그인이 취소되었습니다.");
+    // 토큰 만료 또는 로그인 취소 신호를 받았을 때 처리
+    if (msg.action === "loginCancelled") {
+      // 원래 팝업에서 사용하던 깔끔한 토스트 디자인 그대로 노출
+      showToast("다시 로그인해주세요.");
+
+      // 비로그인 UI로 전환
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    }
 
     // 로그인 완료 시 팝업 갱신
     if (msg.action === "loginFinished") window.location.reload();
