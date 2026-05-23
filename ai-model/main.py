@@ -1,24 +1,26 @@
 #main.py
 
 import os
+import asyncio
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AsyncOpenAI
 import pandas as pd
 import random
 
 from models.label_classifier import LabelClassifier
 from models.refiner import Refiner
 from models.toxic_classifier import ToxicClassifier
+from models.humor import replace_humor_words
 
 # 독성 판단 실패 시 예외처리
 class ToxicClassificationError(Exception): 
     pass
-def predict_toxic_retry(comment: str, retry_count: int = 1):
+async def predict_toxic_retry(comment: str, retry_count: int = 1):
     last_error = None
 
     for _ in range(retry_count + 1):
         try:
-            toxic_result = toxic_classifier.predict(comment)
+            toxic_result = await toxic_classifier.predict(comment)
 
             if not isinstance(toxic_result, dict):
                 raise ValueError("toxic_result가 dict가 아닙니다.")  # 독성 분류 응답 형식 검증
@@ -39,12 +41,12 @@ def predict_toxic_retry(comment: str, retry_count: int = 1):
     raise ToxicClassificationError(str(last_error))
 
 # 라벨링 실패시 예외 처리
-def predict_labels_retry(comment: str, retry_count: int = 1):
+async def predict_labels_retry(comment: str, retry_count: int = 1):
     last_error = None
 
     for _ in range(retry_count + 1):
         try:
-            label_result = classifier.predict(comment)
+            label_result = await classifier.predict(comment)
             labels = label_result.get("labels", [])
 
             if not isinstance(labels, list):
@@ -98,28 +100,29 @@ def replace_simple_profanity(text: str, bad_words: list):
 
 load_dotenv()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 classifier = LabelClassifier(
     client=client,
-    model_name="gpt-5.4-mini"
+    #model_name="gpt-5.4-mini"
+    model_name="gpt-4o-mini"
 )
 
 refiner = Refiner(
     client=client,
-    model_name="gpt-5.4-mini"
+    model_name="gpt-4o-mini"
 )
 
 toxic_classifier = ToxicClassifier(
     client=client,
-    model_name="gpt-5.4-mini"
+    model_name="gpt-4o-mini"
 )
 
 bad_words = load_bad_words("models/profanityDict_result_v2.csv")
 
 
-def refine_comment(comment: str):
-    toxic_result = predict_toxic_retry(comment) # 독성 판단 실패 시 예외처리
+async def refine_comment(comment: str):
+    toxic_result = await predict_toxic_retry(comment) # 독성 판단 실패 시 예외처리
 
     if toxic_result["label"] == "non-toxic":
         return {
@@ -132,7 +135,7 @@ def refine_comment(comment: str):
             "toxic_result": toxic_result
         }
 
-    label_info = predict_labels_retry(comment) # toxic으로 분류된 경우에만 라벨링 수행. 실패하면 labels=[]로 반환됨
+    label_info = await predict_labels_retry(comment) # toxic으로 분류된 경우에만 라벨링 수행. 실패하면 labels=[]로 반환됨
 
     labels = label_info["labels"]
     label_status = label_info["label_status"]
@@ -143,11 +146,11 @@ def refine_comment(comment: str):
         final_result["process_type"] = "dictionary_replacement"
 
     elif len(labels) > 0:
-        final_result = refiner.refine(comment)
+        final_result = await refiner.refine(comment)
         final_result["process_type"] = final_result.get("process_type", "llm_refinement")
 
     else:
-        final_result = refiner.refine(comment)
+        final_result = await refiner.refine(comment)
         final_result["process_type"] = final_result.get("process_type", "llm_refinement_type_label_error")
 
     final_result["labels"] = labels
@@ -157,8 +160,41 @@ def refine_comment(comment: str):
 
     return final_result
 
+#humor 모드
+async def humor_comment(comment: str):
 
-def main():
+    toxic_result = await predict_toxic_retry(comment)
+
+    if toxic_result["label"] == "non-toxic":
+        return {
+            "original_text": comment,
+            "refined_text": comment,
+            "process_type": "pass",
+            "labels": [],
+            "label_status": "not_executed",
+            "label_error": "",
+            "toxic_result": toxic_result
+        }
+
+    label_info = await predict_labels_retry(comment)
+
+    labels = label_info["labels"]
+    label_status = label_info["label_status"]
+    label_error = label_info["label_error"]
+
+    final_result = replace_humor_words(
+        comment,
+        bad_words
+    )
+
+    final_result["labels"] = labels
+    final_result["label_status"] = label_status
+    final_result["label_error"] = label_error
+    final_result["toxic_result"] = toxic_result
+
+    return final_result
+
+async def main():
     #테스트용
     test_comments = [
         "좌좀 홍어들이 일베보다 더 극혐이다",
@@ -175,7 +211,7 @@ def main():
     ]
 
     for comment in test_comments:
-        result = refine_comment(comment)
+        result = await refine_comment(comment)
 
         print("=" * 50)
         print("댓글:", result["original_text"])
@@ -186,4 +222,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
