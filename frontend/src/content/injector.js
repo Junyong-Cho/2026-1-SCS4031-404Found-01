@@ -48,7 +48,7 @@ const flushQueue = async () => {
   // 큐에서 최대 15개까지만 잘라내기 (남은 건 다음 1.5초 주기에 처리)
   const chunk = commentQueue.splice(0, MAX_BATCH_SIZE);
 
-  const stepMap = { 1: "blur", 2: "humor", 3: "refine" };
+  const stepMap = { 1: "blur", 2: "refine" };
   const payload = {
     userSetting: stepMap[settings.filterStep] || "blur",
     comments: chunk.map((c) => ({
@@ -70,7 +70,7 @@ const flushQueue = async () => {
       return;
     }
 
-    // 🛡️ [2. 백엔드/백그라운드 에러 최상단 방어]
+    // [2. 백엔드/백그라운드 에러 최상단 방어]
     if (!response || response.error) {
       console.error("[댓글세탁소] 백그라운드 처리 중 에러가 발생하여 처리를 중단합니다.", response?.error);
       return;

@@ -138,8 +138,8 @@ export function renderCleanResult(result, container, config) {
 
   if (result.isToxic) {
     injectFeedbackButton(container, result); // 피드백 버튼 주입
-    // 2단계(Humor) 또는 3단계(Refined)인 경우 텍스트 교체 및 배지 삽입
-    if (result.convertedText && (result.filterStep === "2" || result.filterStep === "3")) {
+    // 2단계(Refined)인 경우 텍스트 교체 및 배지 삽입
+    if (result.convertedText && result.filterStep === "2") {
       commentSpan.textContent = result.convertedText; // 순화된 텍스트로 교체
       commentBody.classList.remove("comment-seeding-blur"); // 블러 해제
       commentBody.classList.remove("comment-seeding-blur");

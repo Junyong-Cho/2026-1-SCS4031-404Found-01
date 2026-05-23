@@ -8,7 +8,7 @@ import { addTag, saveKeywords } from "./keywords.js";
  */
 document.addEventListener("DOMContentLoaded", () => {
   // --- 1. DOM 요소 선택 ---
-  const stepRadios = document.querySelectorAll('input[name="filterStep"]'); // 1/2/3단계 라디오 버튼
+  const stepRadios = document.querySelectorAll('input[name="filterStep"]'); // 1/2단계 라디오 버튼
   const mainToggle = document.getElementById("service-onoff"); // 전체 서비스 ON/OFF 토글
   const modeGeneralLabel = document.getElementById("mode-general"); // '일반' 모드 레이블
   const modeCleanLabel = document.getElementById("mode-clean"); // '클린' 모드 레이블
@@ -44,8 +44,9 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log("[팝업 로드] 스토리지 데이터 확인:", res);
 
     // (1) 정화 단계 라디오 복구
-    if (res.filterStep) {
-      const targetRadio = document.querySelector(`input[value="${res.filterStep}"]`);
+    const filterStep = res.filterStep;
+    if (filterStep) {
+      const targetRadio = document.querySelector(`input[value="${filterStep}"]`);
       if (targetRadio) targetRadio.checked = true;
     }
 
