@@ -150,7 +150,7 @@ const commentObserver = new IntersectionObserver(
 
           const commentEl = querySelectorWithFallback(target, config.comment, "commentBody");
           if (commentEl) {
-            const text = commentEl.innerText.trim();
+            let text = commentEl.innerText.trim();
 
             // 로컬 금지어 체크 로직
             const foundKeywords = personalKeywords.filter((kw) => text.includes(kw));
