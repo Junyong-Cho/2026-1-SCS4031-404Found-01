@@ -13,36 +13,7 @@ from models.toxic_classifier import ToxicClassifier
 from models.humor import replace_humor_words
 
 
-
-# 라벨링 실패시 예외 처리
-async def predict_labels_retry(comment: str, retry_count: int = 1):
-    last_error = None
-
-    for _ in range(retry_count + 1):
-        try:
-            label_result = await classifier.predict(comment)
-            labels = label_result.get("labels", [])
-
-            if not isinstance(labels, list):
-                raise ValueError("labels가 list가 아닙니다.")  # 라벨 응답 형식 검증
-
-            if len(labels) == 0:
-                raise ValueError("labels가 비어 있습니다.")  # toxic 댓글인데 라벨이 없으면 fallback 재시도
-
-            return {
-                "labels": labels,
-                "label_status": "success",
-                "label_error": ""
-            }
-
-        except Exception as e:
-            last_error = e
-
-    return {
-        "labels": [],
-        "label_status": "label_error",
-        "label_error": str(last_error)
-    }  # 변경: 라벨링 실패는 기록만 남기고 정화는 계속 진행
+  
 
 def load_bad_words(csv_path: str):
     df = pd.read_csv(csv_path)
@@ -109,7 +80,7 @@ async def refine_comment(comment: str):
             "toxic_result": toxic_result
         }
 
-    label_info = await predict_labels_retry(comment) # toxic으로 분류된 경우에만 라벨링 수행. 실패하면 labels=[]로 반환됨
+    label_info = await classifier.predict(comment) # toxic으로 분류된 경우에만 라벨링 수행. 실패하면 labels=[]로 반환됨
 
     labels = label_info["labels"]
     label_status = label_info["label_status"]
@@ -150,7 +121,7 @@ async def humor_comment(comment: str):
             "toxic_result": toxic_result
         }
 
-    label_info = await predict_labels_retry(comment)
+    label_info = await classifier.predict(comment)
 
     labels = label_info["labels"]
     label_status = label_info["label_status"]
