@@ -12,33 +12,7 @@ from models.refiner import Refiner
 from models.toxic_classifier import ToxicClassifier
 from models.humor import replace_humor_words
 
-# 독성 판단 실패 시 예외처리
-class ToxicClassificationError(Exception): 
-    pass
-async def predict_toxic_retry(comment: str, retry_count: int = 1):
-    last_error = None
 
-    for _ in range(retry_count + 1):
-        try:
-            toxic_result = await toxic_classifier.predict(comment)
-
-            if not isinstance(toxic_result, dict):
-                raise ValueError("toxic_result가 dict가 아닙니다.")  # 독성 분류 응답 형식 검증
-
-            label = toxic_result.get("label")
-            if label not in ["toxic", "non-toxic"]:
-                raise ValueError(f"잘못된 toxic label: {label}")  # 허용되지 않은 라벨 검증
-
-            return {
-                "label": label,
-                "is_toxic": label == "toxic",
-                "toxic_status": "success"
-            }
-
-        except Exception as e:
-            last_error = e
-
-    raise ToxicClassificationError(str(last_error))
 
 # 라벨링 실패시 예외 처리
 async def predict_labels_retry(comment: str, retry_count: int = 1):
@@ -122,7 +96,7 @@ bad_words = load_bad_words("models/profanityDict_result_v2.csv")
 
 
 async def refine_comment(comment: str):
-    toxic_result = await predict_toxic_retry(comment) # 독성 판단 실패 시 예외처리
+    toxic_result = await toxic_classifier.predict(comment) # 독성 판단 실패 시 예외처리
 
     if toxic_result["label"] == "non-toxic":
         return {
@@ -163,7 +137,7 @@ async def refine_comment(comment: str):
 #humor 모드
 async def humor_comment(comment: str):
 
-    toxic_result = await predict_toxic_retry(comment)
+    toxic_result = await toxic_classifier.predict(comment)
 
     if toxic_result["label"] == "non-toxic":
         return {
@@ -210,9 +184,14 @@ async def main():
         "씨발",
     ]
 
-    for comment in test_comments:
-        result = await refine_comment(comment)
+    #for comment in test_comments:
+    #    result = await refine_comment(comment)
 
+    results = await asyncio.gather(
+        *(refine_comment(comment) for comment in test_comments)
+    )
+
+    for result in results:
         print("=" * 50)
         print("댓글:", result["original_text"])
         print("독성여부:", result["toxic_result"])
