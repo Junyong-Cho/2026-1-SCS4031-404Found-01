@@ -1,16 +1,39 @@
-#toxic_classifier.py (mvp.gpt)
+# toxic_classifier.py (mvp.gpt)
 
 import json
 from openai import AsyncOpenAI
 
 
+class ToxicClassificationError(Exception):
+    pass
+
+
 class ToxicClassifier:
-    def __init__(self, client: AsyncOpenAI, model_name: str):
+
+    def __init__(
+        self,
+        client: AsyncOpenAI,
+        model_name: str
+    ):
         self.client = client
         self.model_name = model_name
 
-    async def predict(self, text: str) -> dict: #입력:댓글, 출력:결과 dict
-        prompt = f"""
+
+    async def predict(
+        self,
+        text: str,
+        retry_count: int = 1
+    ) -> dict:
+        # 입력: 댓글
+        # 출력: 결과 dict
+
+        last_error = None
+
+        for _ in range(retry_count + 1):
+
+            try:
+
+                prompt = f"""
 너는 한국어 온라인 댓글의 독성 여부를 판별하는 분류기다.
 
 기준:
@@ -65,17 +88,48 @@ class ToxicClassifier:
 }}
 """
 
-#gpt 호출
-        response = await self.client.responses.create(
-            model=self.model_name,
-            input=prompt
+                # GPT 호출
+                response = await self.client.responses.create(
+                    model=self.model_name,
+                    input=prompt
+                )
+
+                # GPT 결과 꺼내기
+                output_text = (
+                    response.output_text.strip()
+                )
+
+                result = json.loads(output_text)
+
+                # 응답 형식 검증
+                if not isinstance(result, dict):
+                    raise ValueError(
+                        "result가 dict가 아닙니다."
+                    )
+
+                label = result.get("label")
+
+                # 허용되지 않은 라벨 검증
+                if label not in [
+                    "toxic",
+                    "non-toxic"
+                ]:
+                    raise ValueError(
+                        f"잘못된 toxic label: {label}"
+                    )
+
+                return {
+                    "label": label,
+                    "is_toxic": (
+                        label == "toxic"
+                    ),
+                    "toxic_status": "success"
+                }
+
+            except Exception as e:
+
+                last_error = e
+
+        raise ToxicClassificationError(
+            str(last_error)
         )
-
-#gpt 결과 꺼내는 부분
-        output_text = response.output_text.strip()
-        result = json.loads(output_text)
-
-        return {
-            "label": result["label"],
-            "is_toxic": result["label"] == "toxic"
-        }
