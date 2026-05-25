@@ -35,67 +35,201 @@ const processedIds = new Set();
 const observationTimers = new Map();
 
 const MAX_BATCH_SIZE = 15; // 한 번에 보낼 최대 댓글 수
+const MAX_RETRY = 2; // 최대 재시도 횟수
 
-/**
- * 큐 처리 로직 (설정에 따라 분기)
- */
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function replacePersonalKeywords(text, personalKeywords) {
+  const sanitizedText = personalKeywords?.reduce((currentText, keyword) => {
+    if (!keyword) return currentText;
+    const regex = new RegExp(escapeRegExp(keyword), "g");
+    return currentText.replace(regex, "아잉❤️");
+  }, text);
+
+  const foundKeywords =
+    personalKeywords?.filter((keyword) => {
+      if (!keyword) return false;
+      return text.includes(keyword);
+    }) || [];
+
+  return { text: sanitizedText, foundKeywords };
+}
+
+function getCommentText(container, config) {
+  const commentEl = querySelectorWithFallback(container, config.comment, "commentBody");
+  return commentEl?.innerText.trim() || "";
+}
+
+function shouldSkipBlur(container) {
+  return container.dataset.userRevealed === "true";
+}
+
+function queueComment(container, config, rawText, personalKeywords, isPriority = false) {
+  const lcId = container.getAttribute("data-lc-id");
+  if (!lcId || !rawText) return;
+
+  if (!container.dataset.originalText) {
+    container.dataset.originalText = rawText;
+  }
+
+  const { text, foundKeywords } = replacePersonalKeywords(rawText, personalKeywords);
+  if (foundKeywords.length > 0) {
+    const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
+    if (commentSpan) commentSpan.textContent = text;
+    container.dataset.localSanitizedText = text;
+  } else {
+    delete container.dataset.localSanitizedText;
+    const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
+    if (commentSpan && container.dataset.originalText) {
+      commentSpan.textContent = container.dataset.originalText;
+    }
+  }
+
+  if (!processedIds.has(lcId)) {
+    if (!shouldSkipBlur(container)) {
+      applyBlurAndSkeleton(container, config);
+    }
+
+    if (isPriority) {
+      commentQueue.unshift({ id: lcId, text });
+    } else {
+      commentQueue.push({ id: lcId, text });
+    }
+    processedIds.add(lcId);
+  }
+}
+
+function queueCommentByContainer(container, config, personalKeywords) {
+  const rawText = getCommentText(container, config);
+  queueComment(container, config, rawText, personalKeywords);
+}
+
+function reprocessCommentsForKeywordChange(config, oldKeywords = [], newKeywords = []) {
+  const addedKeywords = newKeywords.filter((k) => !oldKeywords.includes(k));
+  const removedKeywords = oldKeywords.filter((k) => !newKeywords.includes(k));
+  if (addedKeywords.length === 0 && removedKeywords.length === 0) return;
+
+  document.querySelectorAll(`${config.container}[data-lc-id]`).forEach((container) => {
+    const lcId = container.getAttribute("data-lc-id");
+    if (!lcId) return;
+
+    const originalText = container.dataset.originalText || getCommentText(container, config);
+    if (!originalText) return;
+
+    const hasAdded = addedKeywords.some((keyword) => originalText.includes(keyword));
+    const hasRemoved = removedKeywords.some((keyword) => originalText.includes(keyword));
+    if (!hasAdded && !hasRemoved) return;
+
+    cleanCache.delete(lcId);
+    processedIds.delete(lcId);
+    delete container.dataset.userRevealed;
+
+    const { text, foundKeywords } = replacePersonalKeywords(originalText, newKeywords);
+    if (foundKeywords.length > 0) {
+      const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
+      if (commentSpan) commentSpan.textContent = text;
+      container.dataset.localSanitizedText = text;
+    } else {
+      delete container.dataset.localSanitizedText;
+      const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
+      if (commentSpan) commentSpan.textContent = originalText;
+    }
+
+    if (!shouldSkipBlur(container)) {
+      applyBlurAndSkeleton(container, config);
+    }
+    // 금지어 실시간 추가/변경 건은 화면 최우선 처리를 위해 상단 주입
+    commentQueue.unshift({ id: lcId, text });
+    processedIds.add(lcId);
+  });
+
+  if (commentQueue.length > 0) {
+    flushQueue();
+  }
+}
+
 const flushQueue = async () => {
-  const settings = await chrome.storage.local.get(["serviceActive", "filterStep"]);
+  if (!chrome || !chrome.runtime || !chrome.runtime.id) return;
 
-  // 서비스가 비활성화 상태이거나 전송할 댓글이 없으면 종료
+  const settings = await chrome.storage.local.get(["serviceActive", "filterStep"]);
   if (!settings.serviceActive || commentQueue.length === 0) return;
 
-  // 큐에서 최대 15개까지만 잘라내기 (남은 건 다음 1.5초 주기에 처리)
   const chunk = commentQueue.splice(0, MAX_BATCH_SIZE);
 
-  const stepMap = { 1: "blur", 2: "humor", 3: "refine" };
   const payload = {
-    userSetting: stepMap[settings.filterStep] || "blur",
     comments: chunk.map((c) => ({
       id: String(c.id),
       text: String(c.text),
-      detectedKeywords: c.detectedKeywords || [],
     })),
   };
 
-  // --- [로그] 서버로 보내는 내용 확인 ---
-  console.group(`[서버 전송] 총 ${chunk.length}개 댓글 발송`);
-  console.log("전송 데이터(Payload):", payload);
-  console.groupEnd();
+  console.log("[댓글세탁소] 서버 전송 데이터 (Request Body)", JSON.stringify(payload, null, 2));
 
   chrome.runtime.sendMessage({ type: "PROCESS_COMMENTS", data: payload }, (response) => {
-    // --- [로그] 서버에서 온 내용 확인 ---
-    if (chrome.runtime.lastError) {
-      console.error("[통신 에러]", chrome.runtime.lastError.message);
-      return;
-    }
-    if (!response || response.error) {
-      console.error("[댓글세탁소] 백그라운드 처리 중 에러가 발생하여 처리를 중단합니다.", response?.error);
+    if (chrome.runtime.lastError || !response || response.error) {
+      console.error("[청크 전송 실패] 재시도 큐에 반환합니다.", chrome.runtime.lastError || response?.error);
+
+      const retryChunk = chunk
+        .map((c) => ({ ...c, _retryCount: (c._retryCount || 0) + 1 }))
+        .filter((c) => c._retryCount <= MAX_RETRY);
+
+      if (retryChunk.length > 0) {
+        commentQueue.unshift(...retryChunk);
+      }
       return;
     }
 
-    console.group(`[서버 응답] 수신 완료`);
-    console.log("받은 데이터(Response):", response);
+    if (response && response.results) {
+      console.log("[댓글세탁소] 서버 응답 데이터 (Response Body)", JSON.stringify(response, null, 2));
 
-    if (response?.results) {
-      console.log(`성공적으로 ${response.results.length}개의 분석 결과를 가져왔습니다.`);
-      renderCleanResults(response);
-    } else {
-      console.warn("서버 응답 형식이 올바르지 않거나 결과가 없습니다.");
+      const rawStep = settings.filterStep !== undefined ? settings.filterStep : "2";
+      const currentStep = String(rawStep);
+
+      const enrichedResponse = {
+        ...response,
+        results: response.results.map((item) => {
+          const matchedChunkItem = chunk.find((c) => String(c.id) === String(item.id));
+
+          if (matchedChunkItem && matchedChunkItem.text && matchedChunkItem.text.includes("아잉")) {
+            return {
+              ...item,
+              filterStep: currentStep,
+              convertedText: String(matchedChunkItem.text),
+            };
+          }
+
+          try {
+            const el = document.querySelector(`[data-lc-id="${item.id}"]`);
+            if (el && el.dataset && el.dataset.localSanitizedText) {
+              return {
+                ...item,
+                filterStep: currentStep,
+                convertedText: String(el.dataset.localSanitizedText),
+              };
+            }
+          } catch (e) {}
+
+          return {
+            ...item,
+            filterStep: currentStep,
+          };
+        }),
+      };
+
+      if (typeof renderCleanResults === "function") {
+        renderCleanResults(enrichedResponse);
+      }
     }
-    console.groupEnd();
   });
 };
 
-/**
- * 댓글 감지 및 데이터 추출
- */
 function initObservation() {
   const config = getConfig();
   if (!config) return;
 
   const newContainers = document.querySelectorAll(`${config.container}:not([data-observed])`);
-
   if (newContainers.length === 0) return;
 
   newContainers.forEach((container) => {
@@ -103,10 +237,7 @@ function initObservation() {
     const lcId = extractLcId(linkEl?.getAttribute("href"));
 
     if (!linkEl || !lcId) {
-      console.warn("[DOM 매핑 경고] 댓글 컨테이너는 발견했으나 ID(lcId) 추출에 실패했습니다.", {
-        container,
-        lcId,
-      });
+      console.warn("[DOM 매핑 경고] 댓글 ID 추출 실패", { container, lcId });
       return;
     }
 
@@ -116,9 +247,6 @@ function initObservation() {
   });
 }
 
-/**
- * 화면 노출 감지 즉시 블러 처리 + 체류 후 큐 삽입
- */
 const commentObserver = new IntersectionObserver(
   (entries) => {
     entries.forEach(async (entry) => {
@@ -133,46 +261,65 @@ const commentObserver = new IntersectionObserver(
         ]);
         if (!serviceActive) return;
 
-        // 1. 이미 처리 완료(캐시)되었거나 현재 큐에서 대기 중(processedIds)이면
-        if (cleanCache.has(lcId) || processedIds.has(lcId)) {
-          // 캐시에 있는 경우에만 '화면 업데이트'를 위해 한 번 호출하고 끝냄
-          if (cleanCache.has(lcId)) {
-            renderCleanResult(cleanCache.get(lcId), target, config);
-          }
-          return; // 처리 중인 댓글은 여기서 바로 종료 (applyBlur~ 호출 안 함)
+        if (cleanCache.has(lcId)) {
+          renderCleanResult(cleanCache.get(lcId), target, config);
+          return;
         }
 
-        // 1. 즉시 블러 실행
-        applyBlurAndSkeleton(target, config);
+        // 현재 큐 버퍼 안에 이미 있다면 무시하되 시선이 다시 왔으므로 최상단으로 옮길 수 있게 가드 해제
+        if (commentQueue.some((item) => item.id === lcId)) {
+          return;
+        }
+
+        if (!shouldSkipBlur(target)) {
+          applyBlurAndSkeleton(target, config);
+        }
 
         if (observationTimers.has(target)) {
           clearTimeout(observationTimers.get(target));
         }
 
-        // 2. 0.8초 체류 확인 후 큐 삽입
         const timer = setTimeout(() => {
-          if (processedIds.has(lcId)) return;
+          if (processedIds.has(lcId) && !cleanCache.has(lcId) && !commentQueue.some((item) => item.id === lcId)) {
+            return;
+          }
 
           const commentEl = querySelectorWithFallback(target, config.comment, "commentBody");
           if (commentEl) {
-            const text = commentEl.innerText.trim();
+            let text = commentEl.innerText.trim();
+            const sanitized = replacePersonalKeywords(text, personalKeywords);
 
-            // 로컬 금지어 체크 로직
-            const foundKeywords = personalKeywords.filter((kw) => text.includes(kw));
+            if (!target.dataset.originalText) {
+              target.dataset.originalText = text;
+            }
 
-            commentQueue.push({
-              id: lcId,
-              text: text,
-              detectedKeywords: foundKeywords,
-            });
-            processedIds.add(lcId);
+            if (sanitized.foundKeywords.length > 0) {
+              const commentSpan = querySelectorWithFallback(target, config.commentSpan, "commentSpan");
+              if (commentSpan) commentSpan.textContent = sanitized.text;
+              target.dataset.localSanitizedText = sanitized.text;
+            } else {
+              delete target.dataset.localSanitizedText;
+              const commentSpan = querySelectorWithFallback(target, config.commentSpan, "commentSpan");
+              if (commentSpan) commentSpan.textContent = target.dataset.originalText || text;
+            }
+
+            if (!commentQueue.some((item) => item.id === lcId)) {
+              if (!shouldSkipBlur(target)) {
+                applyBlurAndSkeleton(target, config);
+              }
+              // 🌟 [시선 역행 방지] 다시 올라왔을 때 눈앞에 있는 댓글이므로 unshift로 최상단 정렬 주입
+              commentQueue.unshift({
+                id: lcId,
+                text: sanitized.text,
+              });
+              processedIds.add(lcId);
+            }
             observationTimers.delete(target);
           }
         }, 800);
 
         observationTimers.set(target, timer);
       } else {
-        // 화면에서 사라지면 타이머 제거
         const timer = observationTimers.get(target);
         if (timer) {
           clearTimeout(timer);
@@ -184,48 +331,40 @@ const commentObserver = new IntersectionObserver(
   { threshold: 0.1 },
 );
 
-/**
- * 에러 방지용 안전 초기화
- */
 const startService = async () => {
   const config = getConfig();
   if (!config || !config.container) {
-    setTimeout(startService, 200); // 0.2초 후 재시도
+    setTimeout(startService, 200);
     return;
   }
 
   const { serviceActive } = await chrome.storage.local.get("serviceActive");
   if (serviceActive) initObservation();
 
-  // 유튜브의 동적 댓글 로딩 감시
   const domObserver = new MutationObserver(initObservation);
   domObserver.observe(document.body, { childList: true, subtree: true });
 };
 
-// 메시지 수신 핸들러
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // 1. 서비스 토글 (ON/OFF)
   if (msg.action === "TOGGLE_SERVICE") {
     if (msg.active) {
       reprocessAllVisibleComments();
       initObservation();
     } else {
+      commentQueue = [];
       restoreAllComments(getConfig());
     }
+    sendResponse({ status: "반영 완료" });
   }
-
-  // 2. 우클릭 메뉴 등으로부터 온 토스트 알림
   if (msg.action === "SHOW_TOAST") {
     showToast(msg.message);
   }
 });
 
-// 설정 변경 감지 (단계 변경 + 금지어 변경)
 chrome.storage.onChanged.addListener(async (changes, areaName) => {
   if (areaName !== "local") return;
   const config = getConfig();
 
-  // 1. 단계(filterStep)가 바뀐 경우 -> 기존 캐시 활용해서 화면만 다시 그림
   if (changes.filterStep) {
     const newStep = changes.filterStep.newValue;
     console.log("[설정 변경] 단계가 변경되었습니다. 캐시 데이터로 화면을 갱신합니다.");
@@ -240,45 +379,37 @@ chrome.storage.onChanged.addListener(async (changes, areaName) => {
     });
   }
 
-  // 2. 금지어(personalKeywords)가 바뀐 경우 -> 캐시 싹 비우고 서버에 재요청
   if (changes.personalKeywords) {
-    console.log("[설정 변경] 금지어가 추가/삭제되었습니다. 캐시를 비우고 다시 분석합니다.");
+    const oldKeywords = changes.personalKeywords.oldValue || [];
+    const newKeywords = changes.personalKeywords.newValue || [];
+    console.log("[설정 변경] 금지어가 추가/삭제되었습니다. 관련 댓글만 선별 재처리합니다.");
 
-    // 캐시와 처리된 ID 목록 초기화 (그래야 다시 요청함)
-    cleanCache.clear();
-    reprocessAllVisibleComments();
+    reprocessCommentsForKeywordChange(config, oldKeywords, newKeywords);
   }
 });
 
-// 1.5초 주기로 서버 전송
 setInterval(flushQueue, 1500);
-
-// 즉시 실행
 startService();
 
-/**
- * 현재 화면에 보이는 모든 댓글을 다시 분석 큐에 넣음
- * (서비스 시작, 금지어 변경 시 사용)
- */
-function reprocessAllVisibleComments() {
+async function reprocessAllVisibleComments() {
   const config = getConfig();
-  processedIds.clear(); // 기존 처리 기록 초기화 (캐시는 유지하되 새로고침 시엔 clear 가능)
+  processedIds.clear();
+
+  const { personalKeywords = [] } = await chrome.storage.local.get("personalKeywords");
 
   document.querySelectorAll(`${config.container}[data-lc-id]`).forEach((container) => {
     const lcId = container.getAttribute("data-lc-id");
 
-    // 캐시에 있다면 바로 렌더링
     if (cleanCache.has(lcId)) {
       renderCleanResult(cleanCache.get(lcId), container, config);
       return;
     }
 
-    // 캐시에 없다면 큐에 삽입
     const commentEl = querySelectorWithFallback(container, config.comment, "commentBody");
-    if (commentEl && !processedIds.has(lcId)) {
-      applyBlurAndSkeleton(container, config); // 로딩 표시
-      commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
-      processedIds.add(lcId);
+    if (commentEl) {
+      const rawText = commentEl.innerText.trim();
+      // 재프로세싱 시에도 최상단 역행 방어 적용
+      queueComment(container, config, rawText, personalKeywords, true);
     }
   });
 

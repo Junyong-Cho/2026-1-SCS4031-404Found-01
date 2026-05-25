@@ -8,7 +8,7 @@ import { addTag, saveKeywords } from "./keywords.js";
  */
 document.addEventListener("DOMContentLoaded", () => {
   // --- 1. DOM 요소 선택 ---
-  const stepRadios = document.querySelectorAll('input[name="filterStep"]'); // 1/2/3단계 라디오 버튼
+  const stepRadios = document.querySelectorAll('input[name="filterStep"]'); // 1/2단계 라디오 버튼
   const mainToggle = document.getElementById("service-onoff"); // 전체 서비스 ON/OFF 토글
   const modeGeneralLabel = document.getElementById("mode-general"); // '일반' 모드 레이블
   const modeCleanLabel = document.getElementById("mode-clean"); // '클린' 모드 레이블
@@ -37,13 +37,35 @@ document.addEventListener("DOMContentLoaded", () => {
     personalSettings: document.querySelector(".personal-settings"),
   };
 
+  // --- 1-2. 공통 함수: 설정 변경 시 유튜브 실시간 동기화 신호 전송 ---
+  function sendConfigChangeToYoutube() {
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+      if (tabs[0] && tabs[0].url?.includes("youtube.com")) {
+        chrome.tabs.sendMessage(
+          tabs[0].id,
+          {
+            action: "TOGGLE_SERVICE",
+            active: mainToggle.checked, // 현재 메인 토글의 ON/OFF 상태를 함께 전송
+          },
+          (response) => {
+            // 통신 예외 또는 무응답 방어용 처리
+            void chrome.runtime.lastError;
+          },
+        );
+      }
+    });
+  }
+
   // --- 2. 초기 데이터 로드 (저장소 분리 호출) ---
 
   // (A) 영구 저장 데이터 (local): 설정, 키워드, 로그인 정보
   chrome.storage.local.get(["filterStep", "serviceActive", "personalKeywords", "userEmail", "isLoggedIn"], (res) => {
+    console.log("[팝업 로드] 스토리지 데이터 확인:", res);
+
     // (1) 정화 단계 라디오 복구
-    if (res.filterStep) {
-      const targetRadio = document.querySelector(`input[value="${res.filterStep}"]`);
+    const filterStep = res.filterStep;
+    if (filterStep) {
+      const targetRadio = document.querySelector(`input[value="${filterStep}"]`);
       if (targetRadio) targetRadio.checked = true;
     }
 
@@ -78,7 +100,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /** 로그인 필요 안내 및 로그인 프로세스 시작 */
   function handleLoginRequired(e) {
     e.preventDefault();
-    if (confirm("맞춤 키워드 설정은 로그인이 필요합니다.\n구글 로그인을 진행하시겠습니까?")) {
+    if (confirm("맞춤 금지어 설정은 로그인이 필요합니다.\n구글 로그인을 진행하시겠습니까?")) {
       chrome.runtime.sendMessage({ action: "login" }, () => window.close());
     }
   }
@@ -90,14 +112,19 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  let isKeywordSubmitting = false; // 현재 서버 통신 중인지 기록하는 가드 플래그
+
   /** 맞춤 금지어 추가 처리 */
   const processAddKeyword = () => {
+    if (isKeywordSubmitting) return;
+
     chrome.storage.local.get(["isLoggedIn", "personalKeywords"], (res) => {
       if (!res.isLoggedIn) {
         handleLoginRequired(new Event("click"));
         return;
       }
-      const keyword = keywordInput.value.trim();
+
+      const keyword = keywordInput.value.trim().normalize("NFC");
       if (!keyword) return;
       const currentKeywords = res.personalKeywords || [];
 
@@ -114,7 +141,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // 특수문자 제한 (한글, 영문, 숫자만 허용)
+      // 特수문자 제한 (한글, 영문, 숫자만 허용)
       const regex = /^[가-힣a-zA-Z0-9]+$/;
       if (!regex.test(keyword)) {
         showToast("특수문자는 입력할 수 없습니다.");
@@ -128,10 +155,42 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // 태그 UI 추가 및 저장소 업데이트
-      addTag(keyword, keywordTagsContainer);
-      keywordInput.value = "";
-      saveKeywords(keywordTagsContainer);
+      isKeywordSubmitting = true;
+      addKeywordBtn.disabled = true;
+      addKeywordBtn.style.opacity = "0.5";
+
+      keywordTagsContainer.style.opacity = "0.5";
+      keywordTagsContainer.style.pointerEvents = "none";
+
+      chrome.runtime.sendMessage(
+        {
+          type: "ADD_SERVER_KEYWORD",
+          keyword: keyword,
+        },
+        (response) => {
+          isKeywordSubmitting = false;
+          addKeywordBtn.disabled = false;
+          addKeywordBtn.style.opacity = "1";
+
+          keywordTagsContainer.style.opacity = "1";
+          keywordTagsContainer.style.pointerEvents = "auto";
+
+          if (response?.status === "success") {
+            // 서버 등록에 성공했을 때만 로컬 화면 및 저장소에 반영 (비동기 스토리지 레이스 가드 적용)
+            const updatedKeywords = [...currentKeywords, keyword];
+
+            chrome.storage.local.set({ personalKeywords: updatedKeywords }, () => {
+              addTag(keyword, keywordTagsContainer);
+              keywordInput.value = "";
+              saveKeywords(keywordTagsContainer);
+              showToast(`'${keyword}' 단어가 추가되었습니다.`);
+              sendConfigChangeToYoutube();
+            });
+          } else {
+            showToast("서버에 키워드를 추가하지 못했습니다.");
+          }
+        },
+      );
     });
   };
 
@@ -155,7 +214,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /** 정화 단계 라디오 버튼 변경 시 저장 */
   stepRadios.forEach((r) =>
-    r.addEventListener("change", (e) => chrome.storage.local.set({ filterStep: e.target.value })),
+    r.addEventListener("change", (e) => {
+      chrome.storage.local.set({ filterStep: e.target.value }, () => {
+        sendConfigChangeToYoutube();
+      });
+    }),
   );
 
   /**
@@ -200,10 +263,23 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // --- 5. 외부 메시지 수신 (백그라운드 등으로부터) ---
+  // --- 5. 외부 메시지 수신  ---
+  keywordTagsContainer.addEventListener("mouseenter", () => {
+    if (isKeywordSubmitting) {
+      showToast("단어가 추가되는 중에는 삭제할 수 없습니다.");
+    }
+  });
+
   chrome.runtime.onMessage.addListener((msg) => {
-    // 로그인 취소 알림
-    if (msg.action === "loginCancelled") showToast("로그인이 취소되었습니다.");
+    // 토큰 만료 또는 로그인 취소 신호를 받았을 때 처리
+    if (msg.action === "loginCancelled") {
+      showToast("다시 로그인해주세요.");
+
+      // 비로그인 UI로 전환
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    }
 
     // 로그인 완료 시 팝업 갱신
     if (msg.action === "loginFinished") window.location.reload();

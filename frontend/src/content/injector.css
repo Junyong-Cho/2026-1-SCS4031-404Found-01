@@ -10,7 +10,7 @@ ytm-comment-renderer {
   transition: all 0.3s ease;
 }
 
-/* [배지] 2/3단계 정화 완료 시 */
+/* [배지] 2단계 정화 완료 시 */
 .laundry-clean-badge {
   display: inline-block;
   width: 8px;

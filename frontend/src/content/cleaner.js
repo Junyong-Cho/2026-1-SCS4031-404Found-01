@@ -78,6 +78,9 @@ export async function applyBlurAndSkeleton(containerEl, config) {
     // 2. 서비스가 OFF라면 즉시 종료
     if (!serviceActive) return;
 
+    // 2.1. 사용자가 이미 1단계 블러를 클릭해 해제한 경우 재적용하지 않음
+    if (containerEl.dataset.userRevealed === "true") return;
+
     const lcId = containerEl.getAttribute("data-lc-id") || "no-id";
 
     // 3. 이미 정화된 이력이 캐시에 있다면 즉시 렌더링하고 종료
@@ -105,52 +108,95 @@ export async function applyBlurAndSkeleton(containerEl, config) {
     containerEl.appendChild(skeletonEl);
   } catch (err) {}
 }
+
 /**
  * 단일 댓글에 대해 서버로부터 받은 정화 결과(독성 여부, 순화 텍스트 등)를 실제 화면에 반영
- * @param {Object} result - 서버 응답 데이터 ({isToxic, convertedText, id, ...})
- * @param {HTMLElement} container - 해당 댓글 컨테이너
- * @param {Object} config - 설정 객체
  */
-export function renderCleanResult(result, container, config) {
+export async function renderCleanResult(result, container, config) {
   const commentBody = querySelectorWithFallback(container, config.comment, "commentBody");
   const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
   const skeleton = container.querySelector(".laundry-loading-skeleton");
 
-  // 응답이 왔으므로 스켈레톤 UI 제거
   if (skeleton) skeleton.remove();
 
-  // 원본 텍스트 최초 1회 저장
+  // 원본 텍스트 최초 1회 안전하게 백업
   if (!container.dataset.originalText && commentSpan) {
     container.dataset.originalText = commentSpan.textContent;
   }
 
-  // 매 렌더링 전 배지 초기화 (단계 변경 시 이전 배지 제거)
   const existingBadge = container.querySelector(".laundry-clean-badge");
   if (existingBadge) existingBadge.remove();
 
-  if (!commentBody || !commentSpan) {
-    console.warn(
-      `[DOM 매핑 오류] renderCleanResult에 필요한 댓글 요소를 찾을 수 없습니다. result.id=${result.id}, container=`,
-      container,
-    );
-    return;
+  if (!commentBody || !commentSpan) return;
+
+  const storage = await chrome.storage.local.get("personalKeywords");
+  const personalKeywords = storage.personalKeywords || [];
+
+  const originalText = container.dataset.originalText || commentSpan.textContent;
+  const baseTargetText = result.convertedText || originalText;
+
+  let forceSanitizedText = null;
+  const hasKeyword = personalKeywords.some((keyword) => keyword && baseTargetText.includes(keyword));
+
+  if (hasKeyword) {
+    forceSanitizedText = personalKeywords.reduce((currentText, keyword) => {
+      if (!keyword) return currentText;
+      const regex = new RegExp(String(keyword).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+      return currentText.replace(regex, "아잉❤️");
+    }, baseTargetText);
   }
 
-  if (result.isToxic) {
-    injectFeedbackButton(container, result); // 피드백 버튼 주입
-    // 2단계(Humor) 또는 3단계(Refined)인 경우 텍스트 교체 및 배지 삽입
-    if (result.convertedText && (result.filterStep === "2" || result.filterStep === "3")) {
-      commentSpan.textContent = result.convertedText; // 순화된 텍스트로 교체
-      commentBody.classList.remove("comment-seeding-blur"); // 블러 해제
-      commentBody.classList.remove("comment-seeding-blur");
-      injectCleanBadge(container, config); // 아바타에 주황색 점 표시
-    } else if (result.filterStep === "1") {
-      commentSpan.textContent = container.dataset.originalText;
-      setupBlurUI(commentBody);
+  const displayText =
+    forceSanitizedText || result.convertedText || container.dataset.localSanitizedText || originalText;
+  const isTargetToHide = result.isToxic || hasKeyword;
+  const filterStep = String(result.filterStep);
+
+  // =========================================================================
+  // [정화 대상 분기] 서버인증 악플이거나, 내가 등록한 금지어가 들어간 경우
+  // =========================================================================
+  if (isTargetToHide) {
+    // 서버가 악플로 판단한 경우에만 피드백 버튼 노출
+    if (result.isToxic) {
+      injectFeedbackButton(container, result);
     }
-  } else {
-    commentSpan.textContent = container.dataset.originalText;
+
+    if (filterStep === "1") {
+      delete container.dataset.userRevealed;
+    }
+
+    // [2단계 : Refine / 순화 모드] 인 경우 -> 블러 걷어내고 순화문(아잉❤️ 포함) 노출
+    if (filterStep === "2" || result.filterStep === "refine") {
+      commentSpan.textContent = displayText;
+      commentBody.classList.remove("comment-seeding-blur");
+
+      commentBody.onclick = null;
+      commentBody.style.cursor = "";
+      commentBody.title = "";
+
+      // 서버 판단 악플이었을 때만 주황색 세탁 완료 배지 주입
+      if (result.isToxic) {
+        injectCleanBadge(container, config);
+      }
+    } else {
+      commentSpan.textContent = displayText;
+      setupBlurUI(commentBody, container);
+    }
+  }
+  // =========================================================================
+  // [완전 청정 분기] 서버도 깨끗하다고 했고 + 내 금지어도 없는 쌩 청정 댓글
+  // =========================================================================
+  else {
+    commentSpan.textContent = displayText;
     commentBody.classList.remove("comment-seeding-blur");
+
+    commentBody.onclick = null;
+    commentBody.style.cursor = "";
+    commentBody.title = "";
+
+    delete container.dataset.userRevealed;
+
+    const existingFeedback = container.querySelector(".laundry-feedback-btn");
+    if (existingFeedback) existingFeedback.remove();
   }
 }
 
@@ -164,12 +210,20 @@ export function restoreAllComments(config) {
 
     if (skeleton) skeleton.remove();
     if (badge) badge.remove();
-    if (commentBody) commentBody.classList.remove("comment-seeding-blur");
+    if (commentBody) {
+      commentBody.classList.remove("comment-seeding-blur");
+      commentBody.onclick = null;
+      commentBody.style.cursor = "";
+      commentBody.title = "";
+    }
 
     // 원본 텍스트 복원
     if (commentSpan && container.dataset.originalText) {
       commentSpan.textContent = container.dataset.originalText;
     }
+
+    delete container.dataset.localSanitizedText;
+    delete container.dataset.userRevealed;
   });
 }
 
@@ -205,12 +259,12 @@ function injectFeedbackButton(container, result) {
  */
 export async function renderCleanResults(data) {
   const { results, stats } = data;
-  // 사용자 설정 단계(1, 2, 3)를 가져옴
-  const { filterStep = "1" } = await chrome.storage.local.get("filterStep");
+
+  const { filterStep = "2" } = await chrome.storage.local.get("filterStep");
   const config = getConfig();
 
   results.forEach((result) => {
-    result.filterStep = filterStep; // 렌더링 함수에서 참조할 수 있도록 데이터 추가
+    result.filterStep = String(filterStep);
     cleanCache.set(result.id, result); // 캐시에 저장
 
     // data-lc-id 속성으로 미리 마킹해둔 DOM 요소를 찾아 렌더링
@@ -254,7 +308,7 @@ export function injectCleanBadge(container, config) {
 /**
  * 1단계(Blur) 처리된 댓글에 클릭 이벤트 리스너를 추가하여 클릭 시 내용을 볼 수 있게 함
  */
-export function setupBlurUI(element) {
+export function setupBlurUI(element, container) {
   element.classList.add("comment-seeding-blur");
   element.style.cursor = "pointer";
   element.title = "클릭하여 원본 보기";
@@ -264,6 +318,9 @@ export function setupBlurUI(element) {
     element.onclick = null;
     element.style.cursor = "";
     element.title = "";
+    if (container) {
+      container.dataset.userRevealed = "true";
+    }
   };
 }
 

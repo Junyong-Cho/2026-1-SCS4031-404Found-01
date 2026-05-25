@@ -324,6 +324,14 @@ input:checked + .slider:before {
   font-size: 13px;
 }
 
+.keyword-guide {
+  font-size: 11px;
+  color: #888888;
+  line-height: 1.5;
+  margin-bottom: 8px;
+  padding-left: 2px;
+}
+
 .keyword-input-group {
   display: flex;
   gap: 5px;
