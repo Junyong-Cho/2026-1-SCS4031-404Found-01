@@ -148,28 +148,33 @@ function handleTokenExpired() {
 
 /**
  * [함수] processCleaning
- * @param {Object} payload - 정화 단계(userSetting)와 댓글 리스트(comments)가 포함된 객체
- * @param {Function} sendResponse - 처리 결과를 다시 콘텐츠 스크립트로 전달하는 콜백
- * 역할: 추출된 유튜브 댓글을 서버로 전송하여 악플 판별 및 순화 텍스트 수신
+ * 역할: 추출된 유튜브 댓글을 서버로 전송하여 악플 판별 및 순화 텍스트 수신 (비로그인 대응)
  */
 async function processCleaning(payload, sendResponse) {
   try {
     // 1. 저장된 서버 인증 토큰 가져오기
     const { serverToken } = await chrome.storage.local.get("serverToken");
 
-    // 2. 백엔드 정화 API 호출
+    // 2. 🌟 로그인 여부에 따라 헤더를 동적으로 세팅 (안전장치)
+    const headers = {
+      "Content-Type": "application/json",
+    };
+
+    // 토큰이 존재할 때만 Authorization 헤더를 추가 (로그아웃 상태면 안 보냄)
+    if (serverToken) {
+      headers["Authorization"] = `Bearer ${serverToken}`;
+    }
+
+    // 3. 백엔드 정화 API 호출
     const response = await fetch(ENDPOINTS.CLEANING, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${serverToken}`, // OAuth 인증 토큰 첨부
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload), // { userSetting, comments: [{id, text}, ...] }
+      headers: headers, // 동적으로 가공된 헤더 주입
+      body: JSON.stringify(payload), // { comments: [{id, text}, ...] }
     });
 
     if (!response.ok) throw new Error(`서버 응답 에러: ${response.status}`);
 
-    // 3. 정화 결과(results, stats)를 응답함
+    // 4. 정화 결과(results, stats)를 응답함
     const resultData = await response.json();
     sendResponse(resultData);
   } catch (error) {

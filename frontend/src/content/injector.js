@@ -41,43 +41,162 @@ const MAX_BATCH_SIZE = 15; // 한 번에 보낼 최대 댓글 수
  */
 const MAX_RETRY = 2; // 최대 재시도 횟수
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function replacePersonalKeywords(text, personalKeywords) {
+  const sanitizedText = personalKeywords?.reduce((currentText, keyword) => {
+    if (!keyword) return currentText;
+    const regex = new RegExp(escapeRegExp(keyword), "g");
+    return currentText.replace(regex, "아잉");
+  }, text);
+
+  const foundKeywords =
+    personalKeywords?.filter((keyword) => {
+      if (!keyword) return false;
+      return text.includes(keyword);
+    }) || [];
+
+  return { text: sanitizedText, foundKeywords };
+}
+
+function getCommentText(container, config) {
+  const commentEl = querySelectorWithFallback(container, config.comment, "commentBody");
+  return commentEl?.innerText.trim() || "";
+}
+
+function shouldSkipBlur(container) {
+  return container.dataset.userRevealed === "true";
+}
+
+function queueComment(container, config, rawText, personalKeywords) {
+  const lcId = container.getAttribute("data-lc-id");
+  if (!lcId || !rawText) return;
+
+  if (!container.dataset.originalText) {
+    container.dataset.originalText = rawText;
+  }
+
+  const { text, foundKeywords } = replacePersonalKeywords(rawText, personalKeywords);
+  if (foundKeywords.length > 0) {
+    const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
+    if (commentSpan) commentSpan.textContent = text;
+    container.dataset.localSanitizedText = text;
+  } else {
+    delete container.dataset.localSanitizedText;
+  }
+
+  if (!processedIds.has(lcId)) {
+    if (!shouldSkipBlur(container)) {
+      applyBlurAndSkeleton(container, config);
+    }
+    commentQueue.push({ id: lcId, text });
+    processedIds.add(lcId);
+  }
+}
+
+function queueCommentByContainer(container, config, personalKeywords) {
+  const rawText = getCommentText(container, config);
+  queueComment(container, config, rawText, personalKeywords);
+}
+
+function reprocessCommentsForKeywordChange(config, oldKeywords = [], newKeywords = []) {
+  const addedKeywords = newKeywords.filter((k) => !oldKeywords.includes(k));
+  const removedKeywords = oldKeywords.filter((k) => !newKeywords.includes(k));
+  if (addedKeywords.length === 0 && removedKeywords.length === 0) return;
+
+  document.querySelectorAll(`${config.container}[data-lc-id]`).forEach((container) => {
+    const lcId = container.getAttribute("data-lc-id");
+    if (!lcId) return;
+
+    const originalText = container.dataset.originalText || getCommentText(container, config);
+    if (!originalText) return;
+
+    const hasAdded = addedKeywords.some((keyword) => originalText.includes(keyword));
+    const hasRemoved = removedKeywords.some((keyword) => originalText.includes(keyword));
+    if (!hasAdded && !hasRemoved) return;
+
+    cleanCache.delete(lcId);
+    processedIds.delete(lcId);
+    delete container.dataset.userRevealed;
+
+    const { text, foundKeywords } = replacePersonalKeywords(originalText, newKeywords);
+    if (foundKeywords.length > 0) {
+      const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
+      if (commentSpan) commentSpan.textContent = text;
+      container.dataset.localSanitizedText = text;
+    } else {
+      delete container.dataset.localSanitizedText;
+    }
+
+    if (!shouldSkipBlur(container)) {
+      applyBlurAndSkeleton(container, config);
+    }
+    commentQueue.push({ id: lcId, text });
+    processedIds.add(lcId);
+  });
+
+  if (commentQueue.length > 0) {
+    flushQueue();
+  }
+}
+
 const flushQueue = async () => {
+  // 1. 브라우저 컨텍스트 유실 방어
+  if (!chrome || !chrome.runtime || !chrome.runtime.id) return;
+
   const settings = await chrome.storage.local.get(["serviceActive", "filterStep"]);
   if (!settings.serviceActive || commentQueue.length === 0) return;
 
+  // 2. 큐에서 분석할 청크 추출
   const chunk = commentQueue.splice(0, MAX_BATCH_SIZE);
 
-  const stepMap = { 1: "blur", 2: "refine" };
+  // 3. 백엔드 스웨거 명세서 양식 완벽 일치 (comments 배열만 최상위에 전송)
   const payload = {
-    userSetting: stepMap[settings.filterStep] || "blur",
     comments: chunk.map((c) => ({
       id: String(c.id),
       text: String(c.text),
-      detectedKeywords: c.detectedKeywords || [],
     })),
   };
 
-  chrome.runtime.sendMessage({ type: "PROCESS_COMMENTS", data: payload }, (response) => {
-    if (chrome.runtime.lastError || !response || response.error) {
-      console.error("[청크 전송 실패] 재시도 큐에 반환합니다.");
+  // 요청 데이터 콘솔 출력
+  console.log("[댓글세탁소] 서버 전송 데이터 (Request Body)", JSON.stringify(payload, null, 2));
 
-      // 실패한 댓글만 재시도 횟수 증가 후 필터링
+  // 4. 백그라운드로 전송
+  chrome.runtime.sendMessage({ type: "PROCESS_COMMENTS", data: payload }, (response) => {
+    // runtime.lastError 및 예외 방어
+    if (chrome.runtime.lastError || !response || response.error) {
+      console.error("[청크 전송 실패] 재시도 큐에 반환합니다.", chrome.runtime.lastError || response?.error);
+
       const retryChunk = chunk
         .map((c) => ({ ...c, _retryCount: (c._retryCount || 0) + 1 }))
         .filter((c) => c._retryCount <= MAX_RETRY);
 
       if (retryChunk.length > 0) {
-        commentQueue.unshift(...retryChunk); // 큐 앞에 다시 삽입
+        commentQueue.unshift(...retryChunk);
       }
-
-      const dropped = chunk.length - retryChunk.length;
-      if (dropped > 0) console.warn(`[재시도 초과] ${dropped}개 댓글 분석을 포기했습니다.`);
       return;
     }
 
-    // 성공 시
-    if (response.results) {
-      renderCleanResults(response);
+    // 성공 시 화면 처리 연동
+    if (response && response.results) {
+      console.log("[댓글세탁소] 서버 응답 데이터 (Response Body)", JSON.stringify(response, null, 2));
+
+      // 🌟 서버가 단계를 안 받으므로, 프론트의 설정을 응답 객체에 직접 합성해서 넘겨줌
+      const currentStep = settings.filterStep ?? 1; // 1: blur, 2: refine
+
+      const enrichedResponse = {
+        ...response,
+        results: response.results.map((item) => ({
+          ...item,
+          filterStep: currentStep, // 개별 결과물에 현재 사용자의 필터 단계 매핑 주입
+        })),
+      };
+
+      if (typeof renderCleanResults === "function") {
+        renderCleanResults(enrichedResponse);
+      }
     }
   });
 };
@@ -138,7 +257,9 @@ const commentObserver = new IntersectionObserver(
         }
 
         // 1. 즉시 블러 실행
-        applyBlurAndSkeleton(target, config);
+        if (!shouldSkipBlur(target)) {
+          applyBlurAndSkeleton(target, config);
+        }
 
         if (observationTimers.has(target)) {
           clearTimeout(observationTimers.get(target));
@@ -151,23 +272,30 @@ const commentObserver = new IntersectionObserver(
           const commentEl = querySelectorWithFallback(target, config.comment, "commentBody");
           if (commentEl) {
             let text = commentEl.innerText.trim();
+            const sanitized = replacePersonalKeywords(text, personalKeywords);
 
-            // 로컬 금지어 체크 로직
-            const foundKeywords = personalKeywords.filter((kw) => text.includes(kw));
-
-            if (foundKeywords.length > 0) {
-              foundKeywords.forEach((kw) => {
-                // 댓글 텍스트 내의 금지어를 전부 '아잉'으로 교체
-                const regex = new RegExp(kw, "g");
-                text = text.replace(regex, "아잉");
-              });
+            if (!target.dataset.originalText) {
+              target.dataset.originalText = text;
             }
 
-            commentQueue.push({
-              id: lcId,
-              text: text,
-            });
-            processedIds.add(lcId);
+            if (sanitized.foundKeywords.length > 0) {
+              const commentSpan = querySelectorWithFallback(target, config.commentSpan, "commentSpan");
+              if (commentSpan) commentSpan.textContent = sanitized.text;
+              target.dataset.localSanitizedText = sanitized.text;
+            } else {
+              delete target.dataset.localSanitizedText;
+            }
+
+            if (!processedIds.has(lcId)) {
+              if (!shouldSkipBlur(target)) {
+                applyBlurAndSkeleton(target, config);
+              }
+              commentQueue.push({
+                id: lcId,
+                text: sanitized.text,
+              });
+              processedIds.add(lcId);
+            }
             observationTimers.delete(target);
           }
         }, 800);
@@ -208,7 +336,6 @@ const startService = async () => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "TOGGLE_SERVICE") {
     if (msg.active) {
-      cleanCache.clear();
       reprocessAllVisibleComments();
       initObservation();
     } else {
@@ -244,11 +371,11 @@ chrome.storage.onChanged.addListener(async (changes, areaName) => {
 
   // 2. 금지어(personalKeywords)가 바뀐 경우 -> 캐시 싹 비우고 서버에 재요청
   if (changes.personalKeywords) {
-    console.log("[설정 변경] 금지어가 추가/삭제되었습니다. 캐시를 비우고 다시 분석합니다.");
+    const oldKeywords = changes.personalKeywords.oldValue || [];
+    const newKeywords = changes.personalKeywords.newValue || [];
+    console.log("[설정 변경] 금지어가 추가/삭제되었습니다. 관련 댓글만 선별 재처리합니다.");
 
-    // 캐시와 처리된 ID 목록 초기화 (그래야 다시 요청함)
-    cleanCache.clear();
-    reprocessAllVisibleComments();
+    reprocessCommentsForKeywordChange(config, oldKeywords, newKeywords);
   }
 });
 
@@ -262,9 +389,11 @@ startService();
  * 현재 화면에 보이는 모든 댓글을 다시 분석 큐에 넣음
  * (서비스 시작, 금지어 변경 시 사용)
  */
-function reprocessAllVisibleComments() {
+async function reprocessAllVisibleComments() {
   const config = getConfig();
   processedIds.clear(); // 기존 처리 기록 초기화 (캐시는 유지하되 새로고침 시엔 clear 가능)
+
+  const { personalKeywords = [] } = await chrome.storage.local.get("personalKeywords");
 
   document.querySelectorAll(`${config.container}[data-lc-id]`).forEach((container) => {
     const lcId = container.getAttribute("data-lc-id");
@@ -275,11 +404,12 @@ function reprocessAllVisibleComments() {
       return;
     }
 
-    // 캐시에 없다면 큐에 삽입
+    if (processedIds.has(lcId)) return;
+
     const commentEl = querySelectorWithFallback(container, config.comment, "commentBody");
-    if (commentEl && !processedIds.has(lcId)) {
-      applyBlurAndSkeleton(container, config); // 로딩 표시
-      commentQueue.push({ id: lcId, text: commentEl.innerText.trim() });
+    if (commentEl) {
+      const rawText = commentEl.innerText.trim();
+      queueComment(container, config, rawText, personalKeywords);
       processedIds.add(lcId);
     }
   });
