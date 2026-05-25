@@ -25,46 +25,49 @@ public class CleaningCommentsController : ControllerBase
     [ProducesResponseType<ResponseCleaningCommentsDto>(StatusCodes.Status200OK)]
     public async Task<IResult> RequestCleaningAsync(RequestCleaningCommentsDto comments, IOptions<AIServerInfo> aiServer)
     {
-        var requestComments = comments.Comments;
-        List<ResponseComment> responseComments = new(requestComments.Count);
+        //var requestComments = comments.Comments;
+        //List<ResponseComment> responseComments = new(requestComments.Count);
 
-        Stat stat = new()
-        {
-            ToxicCount = 0,
-            TotalScanned = requestComments.Count
-        };
+        //Stat stat = new()
+        //{
+        //    ToxicCount = 0,
+        //    TotalScanned = requestComments.Count
+        //};
 
-        for (int i = 0; i < requestComments.Count; i++)
-        {
-            ResponseComment comment = new()
-            {
-                Id = requestComments[i].Id,
-                IsToxic = false,
-                ConvertedText = null
-            };
+        //for (int i = 0; i < requestComments.Count; i++)
+        //{
+        //    ResponseComment comment = new()
+        //    {
+        //        Id = requestComments[i].Id,
+        //        IsToxic = false,
+        //        ConvertedText = null
+        //    };
 
-            if (random.Next(0, 2) == 0)
-            {
-                comment.IsToxic = true;
-                comment.ConvertedText = "***" + requestComments[i].Text + "***";
-                stat.ToxicCount++;
-            }
+        //    if (random.Next(0, 2) == 0)
+        //    {
+        //        comment.IsToxic = true;
+        //        comment.ConvertedText = "***" + requestComments[i].Text + "***";
+        //        stat.ToxicCount++;
+        //    }
 
-            responseComments.Add(comment);
-        }
+        //    responseComments.Add(comment);
+        //}
 
-        ResponseCleaningCommentsDto response = new()
-        {
-            Results = responseComments,
-            Stats = stat
-        };
+        //ResponseCleaningCommentsDto response = new()
+        //{
+        //    Results = responseComments,
+        //    Stats = stat
+        //};
 
-        //HttpClient client = new();
+        HttpClient client = new();
 
-        //var res = await client.PostAsJsonAsync(aiServer.Value.RequestURL, comments);
-        //Console.WriteLine(res.StatusCode);
+        Console.WriteLine(comments.Comments.Count);
 
-        //var response = await res.Content.ReadFromJsonAsync<ResponseCleaningCommentsDto>();
+        var res = await client.PostAsJsonAsync(aiServer.Value.RequestURL, comments);
+
+        Console.WriteLine(res.StatusCode);
+
+        var response = await res.Content.ReadFromJsonAsync<ResponseCleaningCommentsDto>();
 
         return Results.Ok(response);
     }
