@@ -38,8 +38,17 @@ export function addTag(keyword, container) {
   deleteBtn.style.background = "none";
   deleteBtn.style.color = "inherit";
 
-  // 3. 삭제 버튼 클릭 핸들러 바인딩 (서버와 동기화)
+  // 3. 삭제 버튼 클릭 핸들러 바인딩 (서버와 동기화 및 락 연동)
   deleteBtn.addEventListener("click", () => {
+    const addKeywordBtn = document.getElementById("add-keyword");
+
+    if (addKeywordBtn) {
+      addKeywordBtn.disabled = true;
+      addKeywordBtn.style.opacity = "0.5";
+    }
+    container.style.opacity = "0.5";
+    container.style.pointerEvents = "none"; // 삭제 광클을 방지하기 위해 물리적 클릭 차단
+
     // 백그라운드 서버로 해당 유저의 금지어 삭제 요청 전송
     chrome.runtime.sendMessage(
       {
@@ -47,11 +56,23 @@ export function addTag(keyword, container) {
         keyword: keyword,
       },
       (response) => {
+        if (addKeywordBtn) {
+          addKeywordBtn.disabled = false;
+          addKeywordBtn.style.opacity = "1";
+        }
+        container.style.opacity = "1";
+        container.style.pointerEvents = "auto"; // 다시 클릭 가능하도록 잠금 해제
+
         if (response?.status === "success") {
-          // 서버 삭제 성공 시에만 DOM에서 제거하고 스토리지를 동기화합니다.
           tag.remove();
           saveKeywords(container);
           showToast(`'${keyword}' 단어가 삭제되었습니다.`);
+
+          chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+            if (tabs[0] && tabs[0].url?.includes("youtube.com")) {
+              chrome.tabs.sendMessage(tabs[0].id, { action: "TOGGLE_SERVICE", active: true });
+            }
+          });
         } else {
           showToast("서버에서 키워드를 삭제하는 데 실패했습니다.");
         }

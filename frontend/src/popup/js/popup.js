@@ -112,14 +112,19 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  let isKeywordSubmitting = false; // 현재 서버 통신 중인지 기록하는 가드 플래그
+
   /** 맞춤 금지어 추가 처리 */
   const processAddKeyword = () => {
+    if (isKeywordSubmitting) return;
+
     chrome.storage.local.get(["isLoggedIn", "personalKeywords"], (res) => {
       if (!res.isLoggedIn) {
         handleLoginRequired(new Event("click"));
         return;
       }
-      const keyword = keywordInput.value.trim();
+
+      const keyword = keywordInput.value.trim().normalize("NFC");
       if (!keyword) return;
       const currentKeywords = res.personalKeywords || [];
 
@@ -136,7 +141,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // 특수문자 제한 (한글, 영문, 숫자만 허용)
+      // 特수문자 제한 (한글, 영문, 숫자만 허용)
       const regex = /^[가-힣a-zA-Z0-9]+$/;
       if (!regex.test(keyword)) {
         showToast("특수문자는 입력할 수 없습니다.");
@@ -150,19 +155,37 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
+      isKeywordSubmitting = true;
+      addKeywordBtn.disabled = true;
+      addKeywordBtn.style.opacity = "0.5";
+
+      keywordTagsContainer.style.opacity = "0.5";
+      keywordTagsContainer.style.pointerEvents = "none";
+
       chrome.runtime.sendMessage(
         {
           type: "ADD_SERVER_KEYWORD",
           keyword: keyword,
         },
         (response) => {
+          isKeywordSubmitting = false;
+          addKeywordBtn.disabled = false;
+          addKeywordBtn.style.opacity = "1";
+
+          keywordTagsContainer.style.opacity = "1";
+          keywordTagsContainer.style.pointerEvents = "auto";
+
           if (response?.status === "success") {
-            // 서버 등록에 성공했을 때만 로컬 화면 및 저장소에 반영
-            addTag(keyword, keywordTagsContainer);
-            keywordInput.value = "";
-            saveKeywords(keywordTagsContainer);
-            showToast(`'${keyword}' 단어가 추가되었습니다.`);
-            sendConfigChangeToYoutube();
+            // 서버 등록에 성공했을 때만 로컬 화면 및 저장소에 반영 (비동기 스토리지 레이스 가드 적용)
+            const updatedKeywords = [...currentKeywords, keyword];
+
+            chrome.storage.local.set({ personalKeywords: updatedKeywords }, () => {
+              addTag(keyword, keywordTagsContainer);
+              keywordInput.value = "";
+              saveKeywords(keywordTagsContainer);
+              showToast(`'${keyword}' 단어가 추가되었습니다.`);
+              sendConfigChangeToYoutube();
+            });
           } else {
             showToast("서버에 키워드를 추가하지 못했습니다.");
           }
@@ -241,10 +264,15 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // --- 5. 외부 메시지 수신  ---
+  keywordTagsContainer.addEventListener("mouseenter", () => {
+    if (isKeywordSubmitting) {
+      showToast("단어가 추가되는 중에는 삭제할 수 없습니다.");
+    }
+  });
+
   chrome.runtime.onMessage.addListener((msg) => {
     // 토큰 만료 또는 로그인 취소 신호를 받았을 때 처리
     if (msg.action === "loginCancelled") {
-      // 원래 팝업에서 사용하던 깔끔한 토스트 디자인 그대로 노출
       showToast("다시 로그인해주세요.");
 
       // 비로그인 UI로 전환
