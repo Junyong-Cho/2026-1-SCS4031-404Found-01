@@ -40,7 +40,6 @@ public class CleaningCommentsController : ControllerBase
             {
                 Id = requestComments[i].Id,
                 IsToxic = false,
-                ToxicType = string.Empty,
                 ConvertedText = null
             };
 
