@@ -115,7 +115,7 @@ export async function applyBlurAndSkeleton(containerEl, config) {
  * @param {HTMLElement} container - 해당 댓글 컨테이너
  * @param {Object} config - 설정 객체
  */
-export function renderCleanResult(result, container, config) {
+export async function renderCleanResult(result, container, config) {
   const commentBody = querySelectorWithFallback(container, config.comment, "commentBody");
   const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
   const skeleton = container.querySelector(".laundry-loading-skeleton");
@@ -123,7 +123,7 @@ export function renderCleanResult(result, container, config) {
   // 응답이 왔으므로 대기용 스켈레톤 UI 즉시 제거
   if (skeleton) skeleton.remove();
 
-  // 원본 텍스트 최초 1회 안전하게 백업
+  // 원본 텍스트 최초 1회 안전하게 백업 (실시간 추가 시 원문 기준 강제 재치환을 위해 필수)
   if (!container.dataset.originalText && commentSpan) {
     container.dataset.originalText = commentSpan.textContent;
   }
@@ -137,54 +137,69 @@ export function renderCleanResult(result, container, config) {
     return;
   }
 
-  // 로컬 금지어 변환 텍스트가 있다면 그것을 우선으로 하고, 없으면 백업 원본을 타깃팅
-  const displayText = container.dataset.localSanitizedText || container.dataset.originalText || commentSpan.textContent;
+  const storage = await chrome.storage.local.get("personalKeywords");
+  const personalKeywords = storage.personalKeywords || [];
+  const originalText = container.dataset.originalText || commentSpan.textContent;
 
-  // 서버 결과가 유해 댓글(isToxic: true)인 경우
+  let forceSanitizedText = null;
+  const hasKeyword = personalKeywords.some((keyword) => keyword && originalText.includes(keyword));
+
+  if (hasKeyword) {
+    forceSanitizedText = personalKeywords.reduce((currentText, keyword) => {
+      if (!keyword) return currentText;
+      const regex = new RegExp(String(keyword).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+      return currentText.replace(regex, "아잉");
+    }, originalText);
+  }
+
+  const displayText = forceSanitizedText || container.dataset.localSanitizedText || originalText;
+
+  // =========================================================================
+  // [독성 댓글 분기] 서버 결과가 유해 댓글(isToxic: true)인 경우
+  // =========================================================================
   if (result.isToxic) {
     injectFeedbackButton(container, result); // 피드백 보내기 버튼 생성
 
     const filterStep = String(result.filterStep);
 
-    // 2단계에서 1단계로 내려왔을 때도 즉시 블러를 적용해야 하므로 userRevealed 상태를 초기화
     if (filterStep === "1") {
       delete container.dataset.userRevealed;
     }
 
     // [2단계 : Refine / 순화 모드] 인 경우
     if (filterStep === "2" || result.filterStep === "refine") {
-      // 서버가 준 convertedText로 내용을 완전히 갈아끼움
-      commentSpan.textContent = result.convertedText || displayText;
-      commentBody.classList.remove("comment-seeding-blur"); // 임시 블러 해제
+      // 실시간 추가 금지어 문장이 우선이며, 일반 악플이면 서버가 다듬은 순화문 사용
+      commentSpan.textContent = forceSanitizedText || result.convertedText || displayText;
+      commentBody.classList.remove("comment-seeding-blur");
 
-      // 클릭 이벤트가 남아있으면 본문 클릭 시 오작동하므로 초기화
       commentBody.onclick = null;
       commentBody.style.cursor = "";
       commentBody.title = "";
 
-      injectCleanBadge(container, config); // 아바타에 주황색 세탁 완료 점 표시
+      injectCleanBadge(container, config); // 아바타에 주황색 점 표시
     }
-    // [1단계 : Blur / 블러 모드] 인 경우 (또는 그 외 기본값)
+    // [1단계 : Blur / 블러 모드] 인 경우
     else {
-      commentSpan.textContent = displayText; // 원본 텍스트 유지
-
-      // 1단계에서는 isToxic가 true면 항상 블러 처리
+      commentSpan.textContent = displayText;
       setupBlurUI(commentBody, container);
     }
   }
-  // 독성이 없는 정상 댓글(isToxic: false)인 경우
+  // =========================================================================
+  // [청정 댓글 분기] 독성이 없는 정상 댓글(isToxic: false)인 경우
+  // =========================================================================
   else {
     commentSpan.textContent = displayText;
-    commentBody.classList.remove("comment-seeding-blur"); // 블러 완전 해제
+    commentBody.classList.remove("comment-seeding-blur");
 
-    // 클릭 이벤트 및 커서 초기화
     commentBody.onclick = null;
     commentBody.style.cursor = "";
     commentBody.title = "";
 
-    delete container.dataset.userRevealed;
+    // 실시간 추가/삭제 상태 변경을 유연하게 받기 위해 무조건 지우지 않고 상태 초기화
+    if (!forceSanitizedText) {
+      delete container.dataset.userRevealed;
+    }
 
-    // 일반 댓글로 판정되었으므로 혹시 남아있을 수 있는 피드백 버튼 청소
     const existingFeedback = container.querySelector(".laundry-feedback-btn");
     if (existingFeedback) existingFeedback.remove();
   }

@@ -146,11 +146,13 @@ function reprocessCommentsForKeywordChange(config, oldKeywords = [], newKeywords
 }
 
 const flushQueue = async () => {
+  // 1. 브라우저 컨텍스트 유실 방어
   if (!chrome || !chrome.runtime || !chrome.runtime.id) return;
 
   const settings = await chrome.storage.local.get(["serviceActive", "filterStep"]);
   if (!settings.serviceActive || commentQueue.length === 0) return;
 
+  // 2. 큐에서 분석할 청크 추출
   const chunk = commentQueue.splice(0, MAX_BATCH_SIZE);
 
   const payload = {
@@ -160,9 +162,12 @@ const flushQueue = async () => {
     })),
   };
 
+  // 요청 데이터 콘솔 출력
   console.log("[댓글세탁소] 서버 전송 데이터 (Request Body)", JSON.stringify(payload, null, 2));
 
+  // 4. 백그라운드로 전송
   chrome.runtime.sendMessage({ type: "PROCESS_COMMENTS", data: payload }, (response) => {
+    // runtime.lastError 및 예외 방어
     if (chrome.runtime.lastError || !response || response.error) {
       console.error("[청크 전송 실패] 재시도 큐에 반환합니다.", chrome.runtime.lastError || response?.error);
 
@@ -176,25 +181,27 @@ const flushQueue = async () => {
       return;
     }
 
+    // 성공 시 화면 처리 연동
     if (response && response.results) {
       console.log("[댓글세탁소] 서버 응답 데이터 (Response Body)", JSON.stringify(response, null, 2));
 
-      const currentStep = settings.filterStep ?? 1;
+      const currentStep = settings.filterStep ?? 1; // 1: blur, 2: refine
 
       const enrichedResponse = {
         ...response,
         results: response.results.map((item) => {
-          try {
-            const el = document.querySelector(`[data-lc-id="${item.id}"]`);
-            if (el && el.dataset && el.dataset.localSanitizedText) {
-              return {
-                ...item,
-                filterStep: currentStep,
-                convertedText: String(el.dataset.localSanitizedText),
-              };
-            }
-          } catch (e) {}
+          const matchedChunkItem = chunk.find((c) => String(c.id) === String(item.id));
 
+          // 보낸 텍스트에 '아잉'이 포함되어 있다면 (새로 추가한 실시간 금지어 포함)
+          if (matchedChunkItem && matchedChunkItem.text && matchedChunkItem.text.includes("아잉")) {
+            return {
+              ...item,
+              filterStep: currentStep,
+              convertedText: String(matchedChunkItem.text), // 세탁된 텍스트('아잉')로 강제 고정
+            };
+          }
+
+          // 만약 금지어가 없던 일반 댓글이라면 기존 매핑 주입
           return {
             ...item,
             filterStep: currentStep,
