@@ -80,6 +80,45 @@ def cleaing_comment(dto : RequestCommentsDto) :
             print("에러 " + str(e))
 
         results[i] = res
+
+
+# 비동기 호출 용 / 댓글 1개 즉시 return 하는 구조
+
+@app.post('/request-one')
+def cleaning_one_comment(comment: ReqComment):
+
+    res = ResComment(id=comment.id, originalText=comment.text)
+
+    try:
+        refined = refine_comment(comment.text)
+
+        is_toxic = refined["toxic_result"]["is_toxic"]
+
+        labels = refined.get("labels", [])
+        process_type = refined.get("process_type", "")
+
+        res.isToxic = is_toxic
+        res.toxicType = "|".join(labels)
+        res.toxicTypes = labels
+        res.processType = process_type
+
+        if is_toxic:
+            res.convertedText = refined["refined_text"]
+
+    except ToxicClassificationError as e:
+
+        res.isToxic = True
+        res.toxicType = "ClassificationError"
+        res.toxicTypes = []
+        res.convertedText = "악플 판단에 실패한 댓글입니다."
+        res.processType = "toxic_classification_error"
+
+        print("독성 판단 실패")
+        print("원문 " + comment.text)
+        print("에러 " + str(e))
+
+        return res
+    
     
     return ResponseCommentsDto(results = results, stats = stat)
 

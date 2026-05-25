@@ -1,16 +1,33 @@
-#label_classifier.py
+# label_classifier.py
 
 import json
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 
 class LabelClassifier:
-    def __init__(self, client: OpenAI, model_name: str):
+
+    def __init__(
+        self,
+        client: AsyncOpenAI,
+        model_name: str
+    ):
         self.client = client
         self.model_name = model_name
 
-    def predict(self, text: str) -> dict:
-        prompt = f"""
+
+    async def predict(
+        self,
+        text: str,
+        retry_count: int = 1
+    ) -> dict:
+
+        last_error = None
+
+        for _ in range(retry_count + 1):
+
+            try:
+
+                prompt = f"""
 너는 한국어 온라인 댓글의 독성 유형을 분류하는 멀티라벨 분류기다.
 
 목표:
@@ -141,34 +158,68 @@ class LabelClassifier:
 출력 형식:
 {{"labels": ["라벨1", "라벨2"]}}
 """
-        response = self.client.responses.create(
-            model=self.model_name,
-            input=prompt
-        )
 
-        output_text = response.output_text.strip()
-        result = json.loads(output_text)
+                response = await self.client.responses.create(
+                    model=self.model_name,
+                    input=prompt
+                )
 
-        if "labels" not in result or not isinstance(result["labels"], list):
-            raise ValueError("Invalid response format: 'labels' must be a list.")
+                output_text = (
+                    response.output_text.strip()
+                )
 
-        allowed_labels = {
-            "Profanity",
-            "Politics",
-            "Origin",
-            "Physical",
-            "Age",
-            "Gender",
-            "Religion",
-            "Race",
-            "SimpleProfanity",
-        }
+                result = json.loads(output_text)
 
-        cleaned_labels = [
-            label for label in result["labels"]
-            if label in allowed_labels
-        ]
+                # 응답 형식 검증
+                if (
+                    "labels" not in result
+                    or not isinstance(
+                        result["labels"],
+                        list
+                    )
+                ):
+                    raise ValueError(
+                        "Invalid response format: "
+                        "'labels' must be a list."
+                    )
 
+                allowed_labels = {
+                    "Profanity",
+                    "Politics",
+                    "Origin",
+                    "Physical",
+                    "Age",
+                    "Gender",
+                    "Religion",
+                    "Race",
+                    "SimpleProfanity",
+                }
+
+                cleaned_labels = [
+                    label
+                    for label in result["labels"]
+                    if label in allowed_labels
+                ]
+
+                # toxic 댓글인데 labels 비어있으면 retry
+                if len(cleaned_labels) == 0:
+                    raise ValueError(
+                        "labels가 비어 있습니다."
+                    )
+
+                return {
+                    "labels": cleaned_labels,
+                    "label_status": "success",
+                    "label_error": ""
+                }
+
+            except Exception as e:
+
+                last_error = e
+
+        # 라벨링 실패 시 정화는 계속 진행
         return {
-            "labels": cleaned_labels
+            "labels": [],
+            "label_status": "label_error",
+            "label_error": str(last_error)
         }

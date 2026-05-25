@@ -22,11 +22,10 @@ public static class WebAppInitializer
             app.UseSwaggerUI();
         }
 
-        app.UseAuthentication();
-        app.UseAuthorization();
-
         app.UseCors("ExtensionPolicy");
 
+        app.UseAuthentication();
+        app.UseAuthorization();
         app.MapControllers();
     }
 
