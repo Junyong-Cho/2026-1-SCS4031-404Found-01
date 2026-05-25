@@ -111,81 +111,79 @@ export async function applyBlurAndSkeleton(containerEl, config) {
 
 /**
  * 단일 댓글에 대해 서버로부터 받은 정화 결과(독성 여부, 순화 텍스트 등)를 실제 화면에 반영
- * @param {Object} result - 서버 응답 데이터 ({isToxic, convertedText, id, filterStep, ...})
- * @param {HTMLElement} container - 해당 댓글 컨테이너
- * @param {Object} config - 설정 객체
  */
 export async function renderCleanResult(result, container, config) {
   const commentBody = querySelectorWithFallback(container, config.comment, "commentBody");
   const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
   const skeleton = container.querySelector(".laundry-loading-skeleton");
 
-  // 응답이 왔으므로 대기용 스켈레톤 UI 즉시 제거
   if (skeleton) skeleton.remove();
 
-  // 원본 텍스트 최초 1회 안전하게 백업 (실시간 추가 시 원문 기준 강제 재치환을 위해 필수)
+  // 원본 텍스트 최초 1회 안전하게 백업
   if (!container.dataset.originalText && commentSpan) {
     container.dataset.originalText = commentSpan.textContent;
   }
 
-  // 매 렌더링 전 배지 초기화 (단계 변경 시 이전 UI 클린업)
   const existingBadge = container.querySelector(".laundry-clean-badge");
   if (existingBadge) existingBadge.remove();
 
-  if (!commentBody || !commentSpan) {
-    console.warn(`[DOM 매핑 오류] 요소를 찾을 수 없습니다. id=${result.id}`);
-    return;
-  }
+  if (!commentBody || !commentSpan) return;
 
   const storage = await chrome.storage.local.get("personalKeywords");
   const personalKeywords = storage.personalKeywords || [];
+
   const originalText = container.dataset.originalText || commentSpan.textContent;
+  const baseTargetText = result.convertedText || originalText;
 
   let forceSanitizedText = null;
-  const hasKeyword = personalKeywords.some((keyword) => keyword && originalText.includes(keyword));
+  const hasKeyword = personalKeywords.some((keyword) => keyword && baseTargetText.includes(keyword));
 
   if (hasKeyword) {
     forceSanitizedText = personalKeywords.reduce((currentText, keyword) => {
       if (!keyword) return currentText;
       const regex = new RegExp(String(keyword).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
       return currentText.replace(regex, "아잉❤️");
-    }, originalText);
+    }, baseTargetText);
   }
 
-  const displayText = forceSanitizedText || container.dataset.localSanitizedText || originalText;
+  const displayText =
+    forceSanitizedText || result.convertedText || container.dataset.localSanitizedText || originalText;
+  const isTargetToHide = result.isToxic || hasKeyword;
+  const filterStep = String(result.filterStep);
 
   // =========================================================================
-  // [독성 댓글 분기] 서버 결과가 유해 댓글(isToxic: true)인 경우
+  // [정화 대상 분기] 서버인증 악플이거나, 내가 등록한 금지어가 들어간 경우
   // =========================================================================
-  if (result.isToxic) {
-    injectFeedbackButton(container, result); // 피드백 보내기 버튼 생성
-
-    const filterStep = String(result.filterStep);
+  if (isTargetToHide) {
+    // 서버가 악플로 판단한 경우에만 피드백 버튼 노출
+    if (result.isToxic) {
+      injectFeedbackButton(container, result);
+    }
 
     if (filterStep === "1") {
       delete container.dataset.userRevealed;
     }
 
-    // [2단계 : Refine / 순화 모드] 인 경우
+    // [2단계 : Refine / 순화 모드] 인 경우 -> 블러 걷어내고 순화문(아잉❤️ 포함) 노출
     if (filterStep === "2" || result.filterStep === "refine") {
-      // 실시간 추가 금지어 문장이 우선이며, 일반 악플이면 서버가 다듬은 순화문 사용
-      commentSpan.textContent = forceSanitizedText || result.convertedText || displayText;
+      commentSpan.textContent = displayText;
       commentBody.classList.remove("comment-seeding-blur");
 
       commentBody.onclick = null;
       commentBody.style.cursor = "";
       commentBody.title = "";
 
-      injectCleanBadge(container, config); // 아바타에 주황색 점 표시
-    }
-    // [1단계 : Blur / 블러 모드] 인 경우
-    else {
+      // 서버 판단 악플이었을 때만 주황색 세탁 완료 배지 주입
+      if (result.isToxic) {
+        injectCleanBadge(container, config);
+      }
+    } else {
       commentSpan.textContent = displayText;
       setupBlurUI(commentBody, container);
     }
   }
   // =========================================================================
-  // [청정 댓글 분기] 독성이 없는 정상 댓글(isToxic: false)인 경우
+  // [완전 청정 분기] 서버도 깨끗하다고 했고 + 내 금지어도 없는 쌩 청정 댓글
   // =========================================================================
   else {
     commentSpan.textContent = displayText;
@@ -195,10 +193,7 @@ export async function renderCleanResult(result, container, config) {
     commentBody.style.cursor = "";
     commentBody.title = "";
 
-    // 실시간 추가/삭제 상태 변경을 유연하게 받기 위해 무조건 지우지 않고 상태 초기화
-    if (!forceSanitizedText) {
-      delete container.dataset.userRevealed;
-    }
+    delete container.dataset.userRevealed;
 
     const existingFeedback = container.querySelector(".laundry-feedback-btn");
     if (existingFeedback) existingFeedback.remove();
