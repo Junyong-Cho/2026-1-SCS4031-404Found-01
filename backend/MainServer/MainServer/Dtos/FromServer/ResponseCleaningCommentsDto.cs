@@ -32,11 +32,6 @@ public struct ResponseComment
     public bool IsToxic { get; set; }
 
     /// <summary>
-    /// 독성 타입
-    /// </summary>
-    public string? ToxicType { get; set; }
-
-    /// <summary>
     /// 정화문
     /// </summary>
     public string? ConvertedText { get; set; }
