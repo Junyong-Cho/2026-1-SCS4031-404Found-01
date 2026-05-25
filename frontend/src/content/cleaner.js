@@ -148,7 +148,7 @@ export async function renderCleanResult(result, container, config) {
     forceSanitizedText = personalKeywords.reduce((currentText, keyword) => {
       if (!keyword) return currentText;
       const regex = new RegExp(String(keyword).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
-      return currentText.replace(regex, "아잉");
+      return currentText.replace(regex, "아잉❤️");
     }, originalText);
   }
 
@@ -264,12 +264,12 @@ function injectFeedbackButton(container, result) {
  */
 export async function renderCleanResults(data) {
   const { results, stats } = data;
-  // 사용자 설정 단계(1, 2, 3)를 가져옴
-  const { filterStep = "1" } = await chrome.storage.local.get("filterStep");
+
+  const { filterStep = "2" } = await chrome.storage.local.get("filterStep");
   const config = getConfig();
 
   results.forEach((result) => {
-    result.filterStep = filterStep; // 렌더링 함수에서 참조할 수 있도록 데이터 추가
+    result.filterStep = String(filterStep);
     cleanCache.set(result.id, result); // 캐시에 저장
 
     // data-lc-id 속성으로 미리 마킹해둔 DOM 요소를 찾아 렌더링
