@@ -140,7 +140,7 @@ export function renderCleanResult(result, container, config) {
   // 로컬 금지어 변환 텍스트가 있다면 그것을 우선으로 하고, 없으면 백업 원본을 타깃팅
   const displayText = container.dataset.localSanitizedText || container.dataset.originalText || commentSpan.textContent;
 
-  // 🌟 [핵심 조건 분기] 서버 결과가 유해 댓글(isToxic: true)인 경우
+  // 서버 결과가 유해 댓글(isToxic: true)인 경우
   if (result.isToxic) {
     injectFeedbackButton(container, result); // 피드백 보내기 버튼 생성
 
@@ -151,7 +151,7 @@ export function renderCleanResult(result, container, config) {
       delete container.dataset.userRevealed;
     }
 
-    // ▶️ [2단계 : Refine / 순화 모드] 인 경우
+    // [2단계 : Refine / 순화 모드] 인 경우
     if (filterStep === "2" || result.filterStep === "refine") {
       // 서버가 준 convertedText로 내용을 완전히 갈아끼움
       commentSpan.textContent = result.convertedText || displayText;
@@ -164,7 +164,7 @@ export function renderCleanResult(result, container, config) {
 
       injectCleanBadge(container, config); // 아바타에 주황색 세탁 완료 점 표시
     }
-    // ▶️ [1단계 : Blur / 블러 모드] 인 경우 (또는 그 외 기본값)
+    // [1단계 : Blur / 블러 모드] 인 경우 (또는 그 외 기본값)
     else {
       commentSpan.textContent = displayText; // 원본 텍스트 유지
 
@@ -172,7 +172,7 @@ export function renderCleanResult(result, container, config) {
       setupBlurUI(commentBody, container);
     }
   }
-  // 🌟 [청정 댓글 분기] 독성이 없는 정상 댓글(isToxic: false)인 경우
+  // 독성이 없는 정상 댓글(isToxic: false)인 경우
   else {
     commentSpan.textContent = displayText;
     commentBody.classList.remove("comment-seeding-blur"); // 블러 완전 해제

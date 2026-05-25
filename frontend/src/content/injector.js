@@ -35,10 +35,6 @@ const processedIds = new Set();
 const observationTimers = new Map();
 
 const MAX_BATCH_SIZE = 15; // 한 번에 보낼 최대 댓글 수
-
-/**
- * 큐 처리 로직 (설정에 따라 분기)
- */
 const MAX_RETRY = 2; // 최대 재시도 횟수
 
 function escapeRegExp(value) {
@@ -85,6 +81,11 @@ function queueComment(container, config, rawText, personalKeywords) {
     container.dataset.localSanitizedText = text;
   } else {
     delete container.dataset.localSanitizedText;
+    // 금지어가 제거되었을 경우 화면을 즉시 백업된 원본 데이터로 환원 유도
+    const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
+    if (commentSpan && container.dataset.originalText) {
+      commentSpan.textContent = container.dataset.originalText;
+    }
   }
 
   if (!processedIds.has(lcId)) {
@@ -128,6 +129,8 @@ function reprocessCommentsForKeywordChange(config, oldKeywords = [], newKeywords
       container.dataset.localSanitizedText = text;
     } else {
       delete container.dataset.localSanitizedText;
+      const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
+      if (commentSpan) commentSpan.textContent = originalText;
     }
 
     if (!shouldSkipBlur(container)) {
@@ -143,16 +146,13 @@ function reprocessCommentsForKeywordChange(config, oldKeywords = [], newKeywords
 }
 
 const flushQueue = async () => {
-  // 1. 브라우저 컨텍스트 유실 방어
   if (!chrome || !chrome.runtime || !chrome.runtime.id) return;
 
   const settings = await chrome.storage.local.get(["serviceActive", "filterStep"]);
   if (!settings.serviceActive || commentQueue.length === 0) return;
 
-  // 2. 큐에서 분석할 청크 추출
   const chunk = commentQueue.splice(0, MAX_BATCH_SIZE);
 
-  // 3. 백엔드 스웨거 명세서 양식 완벽 일치 (comments 배열만 최상위에 전송)
   const payload = {
     comments: chunk.map((c) => ({
       id: String(c.id),
@@ -160,12 +160,9 @@ const flushQueue = async () => {
     })),
   };
 
-  // 요청 데이터 콘솔 출력
   console.log("[댓글세탁소] 서버 전송 데이터 (Request Body)", JSON.stringify(payload, null, 2));
 
-  // 4. 백그라운드로 전송
   chrome.runtime.sendMessage({ type: "PROCESS_COMMENTS", data: payload }, (response) => {
-    // runtime.lastError 및 예외 방어
     if (chrome.runtime.lastError || !response || response.error) {
       console.error("[청크 전송 실패] 재시도 큐에 반환합니다.", chrome.runtime.lastError || response?.error);
 
@@ -179,19 +176,30 @@ const flushQueue = async () => {
       return;
     }
 
-    // 성공 시 화면 처리 연동
     if (response && response.results) {
       console.log("[댓글세탁소] 서버 응답 데이터 (Response Body)", JSON.stringify(response, null, 2));
 
-      // 🌟 서버가 단계를 안 받으므로, 프론트의 설정을 응답 객체에 직접 합성해서 넘겨줌
-      const currentStep = settings.filterStep ?? 1; // 1: blur, 2: refine
+      const currentStep = settings.filterStep ?? 1;
 
       const enrichedResponse = {
         ...response,
-        results: response.results.map((item) => ({
-          ...item,
-          filterStep: currentStep, // 개별 결과물에 현재 사용자의 필터 단계 매핑 주입
-        })),
+        results: response.results.map((item) => {
+          try {
+            const el = document.querySelector(`[data-lc-id="${item.id}"]`);
+            if (el && el.dataset && el.dataset.localSanitizedText) {
+              return {
+                ...item,
+                filterStep: currentStep,
+                convertedText: String(el.dataset.localSanitizedText),
+              };
+            }
+          } catch (e) {}
+
+          return {
+            ...item,
+            filterStep: currentStep,
+          };
+        }),
       };
 
       if (typeof renderCleanResults === "function") {
@@ -201,15 +209,11 @@ const flushQueue = async () => {
   });
 };
 
-/**
- * 댓글 감지 및 데이터 추출
- */
 function initObservation() {
   const config = getConfig();
   if (!config) return;
 
   const newContainers = document.querySelectorAll(`${config.container}:not([data-observed])`);
-
   if (newContainers.length === 0) return;
 
   newContainers.forEach((container) => {
@@ -217,10 +221,7 @@ function initObservation() {
     const lcId = extractLcId(linkEl?.getAttribute("href"));
 
     if (!linkEl || !lcId) {
-      console.warn("[DOM 매핑 경고] 댓글 컨테이너는 발견했으나 ID(lcId) 추출에 실패했습니다.", {
-        container,
-        lcId,
-      });
+      console.warn("[DOM 매핑 경고] 댓글 ID 추출 실패", { container, lcId });
       return;
     }
 
@@ -230,9 +231,6 @@ function initObservation() {
   });
 }
 
-/**
- * 화면 노출 감지 즉시 블러 처리 + 체류 후 큐 삽입
- */
 const commentObserver = new IntersectionObserver(
   (entries) => {
     entries.forEach(async (entry) => {
@@ -247,16 +245,16 @@ const commentObserver = new IntersectionObserver(
         ]);
         if (!serviceActive) return;
 
-        // 1. 이미 처리 완료(캐시)되었거나 현재 큐에서 대기 중(processedIds)이면
-        if (cleanCache.has(lcId) || processedIds.has(lcId)) {
-          // 캐시에 있는 경우에만 '화면 업데이트'를 위해 한 번 호출하고 끝냄
-          if (cleanCache.has(lcId)) {
-            renderCleanResult(cleanCache.get(lcId), target, config);
-          }
-          return; // 처리 중인 댓글은 여기서 바로 종료 (applyBlur~ 호출 안 함)
+        if (cleanCache.has(lcId)) {
+          renderCleanResult(cleanCache.get(lcId), target, config);
+          return;
         }
 
-        // 1. 즉시 블러 실행
+        // 현재 큐 버퍼 안에서 실시간으로 대기 중이라면 중복 등록 방지를 위해 탈출만 시킴 (블러 차단 금지)
+        if (commentQueue.some((item) => item.id === lcId)) {
+          return;
+        }
+
         if (!shouldSkipBlur(target)) {
           applyBlurAndSkeleton(target, config);
         }
@@ -265,9 +263,11 @@ const commentObserver = new IntersectionObserver(
           clearTimeout(observationTimers.get(target));
         }
 
-        // 2. 0.8초 체류 확인 후 큐 삽입
         const timer = setTimeout(() => {
-          if (processedIds.has(lcId)) return;
+          if (processedIds.has(lcId) && !cleanCache.has(lcId) && !commentQueue.some((item) => item.id === lcId)) {
+            // 완전히 끝난 데이터가 아니라면 중복 추가 방지 가드 작동
+            return;
+          }
 
           const commentEl = querySelectorWithFallback(target, config.comment, "commentBody");
           if (commentEl) {
@@ -284,9 +284,12 @@ const commentObserver = new IntersectionObserver(
               target.dataset.localSanitizedText = sanitized.text;
             } else {
               delete target.dataset.localSanitizedText;
+              const commentSpan = querySelectorWithFallback(target, config.commentSpan, "commentSpan");
+              if (commentSpan) commentSpan.textContent = target.dataset.originalText || text;
             }
 
-            if (!processedIds.has(lcId)) {
+            // 안전성 재검증 후 큐 주입
+            if (!commentQueue.some((item) => item.id === lcId)) {
               if (!shouldSkipBlur(target)) {
                 applyBlurAndSkeleton(target, config);
               }
@@ -302,7 +305,6 @@ const commentObserver = new IntersectionObserver(
 
         observationTimers.set(target, timer);
       } else {
-        // 화면에서 사라지면 타이머 제거
         const timer = observationTimers.get(target);
         if (timer) {
           clearTimeout(timer);
@@ -314,25 +316,20 @@ const commentObserver = new IntersectionObserver(
   { threshold: 0.1 },
 );
 
-/**
- * 에러 방지용 안전 초기화
- */
 const startService = async () => {
   const config = getConfig();
   if (!config || !config.container) {
-    setTimeout(startService, 200); // 0.2초 후 재시도
+    setTimeout(startService, 200);
     return;
   }
 
   const { serviceActive } = await chrome.storage.local.get("serviceActive");
   if (serviceActive) initObservation();
 
-  // 유튜브의 동적 댓글 로딩 감시
   const domObserver = new MutationObserver(initObservation);
   domObserver.observe(document.body, { childList: true, subtree: true });
 };
 
-// 메시지 수신 핸들러
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "TOGGLE_SERVICE") {
     if (msg.active) {
@@ -349,12 +346,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// 설정 변경 감지 (단계 변경 + 금지어 변경)
 chrome.storage.onChanged.addListener(async (changes, areaName) => {
   if (areaName !== "local") return;
   const config = getConfig();
 
-  // 1. 단계(filterStep)가 바뀐 경우 -> 기존 캐시 활용해서 화면만 다시 그림
   if (changes.filterStep) {
     const newStep = changes.filterStep.newValue;
     console.log("[설정 변경] 단계가 변경되었습니다. 캐시 데이터로 화면을 갱신합니다.");
@@ -369,7 +364,6 @@ chrome.storage.onChanged.addListener(async (changes, areaName) => {
     });
   }
 
-  // 2. 금지어(personalKeywords)가 바뀐 경우 -> 캐시 싹 비우고 서버에 재요청
   if (changes.personalKeywords) {
     const oldKeywords = changes.personalKeywords.oldValue || [];
     const newKeywords = changes.personalKeywords.newValue || [];
@@ -379,38 +373,27 @@ chrome.storage.onChanged.addListener(async (changes, areaName) => {
   }
 });
 
-// 1.5초 주기로 서버 전송
 setInterval(flushQueue, 1500);
-
-// 즉시 실행
 startService();
 
-/**
- * 현재 화면에 보이는 모든 댓글을 다시 분석 큐에 넣음
- * (서비스 시작, 금지어 변경 시 사용)
- */
 async function reprocessAllVisibleComments() {
   const config = getConfig();
-  processedIds.clear(); // 기존 처리 기록 초기화 (캐시는 유지하되 새로고침 시엔 clear 가능)
+  processedIds.clear();
 
   const { personalKeywords = [] } = await chrome.storage.local.get("personalKeywords");
 
   document.querySelectorAll(`${config.container}[data-lc-id]`).forEach((container) => {
     const lcId = container.getAttribute("data-lc-id");
 
-    // 캐시에 있다면 바로 렌더링
     if (cleanCache.has(lcId)) {
       renderCleanResult(cleanCache.get(lcId), container, config);
       return;
     }
 
-    if (processedIds.has(lcId)) return;
-
     const commentEl = querySelectorWithFallback(container, config.comment, "commentBody");
     if (commentEl) {
       const rawText = commentEl.innerText.trim();
       queueComment(container, config, rawText, personalKeywords);
-      processedIds.add(lcId);
     }
   });
 

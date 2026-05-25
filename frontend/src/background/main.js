@@ -155,7 +155,7 @@ async function processCleaning(payload, sendResponse) {
     // 1. 저장된 서버 인증 토큰 가져오기
     const { serverToken } = await chrome.storage.local.get("serverToken");
 
-    // 2. 🌟 로그인 여부에 따라 헤더를 동적으로 세팅 (안전장치)
+    // 2. 로그인 여부에 따라 헤더를 동적으로 세팅 (안전장치)
     const headers = {
       "Content-Type": "application/json",
     };
