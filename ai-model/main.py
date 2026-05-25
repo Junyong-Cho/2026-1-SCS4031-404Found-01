@@ -42,36 +42,39 @@ bad_words = load_bad_words(
 
 async def refine_comment(comment: str):
 
-    # 1차 치환사전 매칭
+    # 1. 욕설 사전 치환
     replace_result = replace_bad_words(
         comment,
         bad_words
     )
 
-    replaced_comment = (
-        replace_result["refined_text"]
-    )
+    replaced_comment = replace_result["refined_text"]
 
+    # 2. 치환된 댓글으로 GPT 판별·분류·정화
     toxic_result = await toxic_classifier.predict(
-        comment
+        replaced_comment
     )
 
-    # 비독성 댓글
+    # non-toxic → 사전 치환 결과 반환 (모든 댓글은 사전을 통과함)
     if toxic_result["label"] == "non-toxic":
 
         return {
             "original_text": comment,
-            "refined_text": comment,
-            "process_type": "pass",
+            "refined_text": replaced_comment,
+            "process_type": (
+                "dictionary_replacement"
+                if replace_result["matched"]
+                else "pass"
+            ),
             "labels": [],
             "label_status": "not_executed",
             "label_error": "",
             "toxic_result": toxic_result
         }
 
-    # toxic 댓글만 라벨링 수행
+    # toxic → 치환된 댓글 기준 라벨링
     label_info = await classifier.predict(
-        comment
+        replaced_comment
     )
 
     labels = label_info["labels"]
@@ -84,24 +87,28 @@ async def refine_comment(comment: str):
         label_info["label_error"]
     )
 
-    # 의미 없는 단순 욕설
-    # 일단 현재는 1차로 치환사전 매칭 된 결과를 사용하는 것임
-    # LLM 프롬프팅 추가되면 예외처리 해서 'ㅅ@ㅂ, 벼어어엉신' 이런거를 '아잉'으로 처리할 계획
+    # 의미 없는 단순 욕설 (SimpleProfanity)
+    # 1차 치환 후에도 SimpleProfanity로 분류된 경우
+    # 일단 남아 있는 변형 욕설을 LLM으로 "아잉❤️" 치환 (추후 치환사전 로직 추가 수정 계획중)
     if "SimpleProfanity" in labels:
 
-        final_result = replace_result
-
+        final_result = await refiner.replace_remaining_simple_profanity(
+            replaced_comment
+        )
+        final_result["original_text"] = comment
+        final_result["dictionary_refined_text"] = replaced_comment
         final_result["process_type"] = (
-            "dictionary_replacement"
+            "simple_profanity_llm_replacement"
         )
 
-    # 의미 있는 독성 댓글
+    # 그 외 toxic → 치환된 댓글을 Refiner 입력으로 정화
     elif len(labels) > 0:
 
         final_result = await refiner.refine(
-            comment
+            replaced_comment
         )
 
+        final_result["original_text"] = comment
         final_result["process_type"] = (
             final_result.get(
                 "process_type",
@@ -113,9 +120,10 @@ async def refine_comment(comment: str):
     else:
 
         final_result = await refiner.refine(
-            comment
+            replaced_comment
         )
 
+        final_result["original_text"] = comment
         final_result["process_type"] = (
             final_result.get(
                 "process_type",

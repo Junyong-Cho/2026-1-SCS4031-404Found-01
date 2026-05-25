@@ -18,6 +18,7 @@ class Refiner:
 - 욕설, 모욕, 비하, 조롱, 공격적 표현은 완화한다.
 - 지나치게 공손하거나 딱딱하게 바꾸지 말고, 자연스러운 한국어 댓글 톤을 유지한다.
 - 원문의 주제가 사라지거나 의미가 왜곡되면 안 된다.
+- 이미 "아잉❤️"으로 치환된 단어는 그대로 둔다.
 
 정화 원칙:
 1. 원문의 핵심 주장과 의도는 유지한다.
@@ -226,4 +227,112 @@ class Refiner:
             "refined_text": best_candidate["text"],
             "candidates": cleaned_candidates,
             "selected_candidate": best_candidate
+        }
+
+    async def replace_remaining_simple_profanity(
+        self,
+        text: str
+    ) -> dict:
+        prompt = f"""
+너는 한국어 온라인 댓글에서 남아 있는 단순 욕설만 유희형 표현으로 치환하는 정제기다.
+
+상황:
+- 이 댓글은 이미 1차 욕설 사전 치환을 거친 문장이다.
+- 그런데도 SimpleProfanity로 분류되었으므로, 아직 사전에 잡히지 않은 변형 욕설이나 비속어가 남아 있을 수 있다.
+- 이 댓글은 의미 있는 주장이나 비판보다 욕설, 감탄형 비속어, 웃음, 기호, 조사, 어미 중심의 댓글이다.
+
+목표:
+- 남아 있는 욕설, 비속어, 변형 욕설, 초성 욕설, 특수문자 섞인 욕설 등을 "아잉❤️"으로 치환한다.
+- 이미 "아잉❤️"으로 치환된 부분은 그대로 둔다.
+- ㅋㅋ, ㅎㅎ, ㅠㅠ, 느낌표, 물음표, 말줄임표 같은 감정 표현이나 문장부호는 자연스럽게 유지해도 된다.
+- 의미 있는 새로운 문장으로 바꾸지 마라.
+- 충고, 훈계, 해설을 추가하지 마라.
+- 댓글 자리에 그대로 들어갈 수 있는 짧고 자연스러운 결과만 만든다.
+
+치환 기준:
+- 욕설 또는 비속어로 보이는 부분만 "아잉❤️"으로 바꾼다.
+- 욕설이 여러 개 남아 있으면 각각 "아잉❤️"으로 바꾼다.
+- 욕설이 아닌 웃음, 기호, 조사, 어미는 가능한 유지한다.
+- 단, 전체가 욕설 변형뿐이라면 결과를 "아잉❤️" 중심으로 간단히 만든다.
+
+예시 1
+입력: "씨이이발ㅋㅋ"
+출력:
+{{
+  "original_text": "씨이이발ㅋㅋ",
+  "refined_text": "아잉❤️ㅋㅋ"
+}}
+
+예시 2
+입력: "아잉❤️ ㅅ@ㅂㅋㅋ"
+출력:
+{{
+  "original_text": "아잉❤️ ㅅ@ㅂㅋㅋ",
+  "refined_text": "아잉❤️ 아잉❤️ㅋㅋ"
+}}
+
+예시 3
+입력: "벼어어엉신 같네"
+출력:
+{{
+  "original_text": "벼어어엉신 같네",
+  "refined_text": "아잉❤️ 같네"
+}}
+
+예시 4
+입력: "ㅅ@ㅂ 진짜"
+출력:
+{{
+  "original_text": "ㅅ@ㅂ 진짜",
+  "refined_text": "아잉❤️ 진짜"
+}}
+
+이제 아래 댓글을 정제하라.
+
+입력:
+"{text}"
+
+반드시 JSON 형식으로만 답하라.
+설명, 이유, 마크다운 코드블록은 절대 포함하지 마라.
+
+출력 형식:
+{{
+  "original_text": "입력 댓글",
+  "refined_text": "정제된 댓글"
+}}
+"""
+
+        response = await self.client.responses.create(
+            model=self.model_name,
+            input=prompt
+        )
+
+        output_text = response.output_text.strip()
+
+        if output_text.startswith("```"):
+            output_text = output_text.strip("`")
+            output_text = output_text.replace("json", "", 1).strip()
+
+        try:
+            result = json.loads(output_text)
+        except json.JSONDecodeError:
+            return {
+                "original_text": text,
+                "refined_text": "아잉❤️",
+                "process_type": "simple_profanity_llm_fallback"
+            }
+
+        refined_text = (
+            result
+            .get("refined_text", "")
+            .strip()
+        )
+
+        if not refined_text:
+            refined_text = "아잉❤️"
+
+        return {
+            "original_text": text,
+            "refined_text": refined_text,
+            "process_type": "simple_profanity_llm_replacement"
         }
