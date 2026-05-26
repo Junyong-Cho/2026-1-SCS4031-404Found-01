@@ -178,7 +178,7 @@ export async function renderCleanResult(result, container, config) {
         injectCleanBadge(container, config);
       }
     } else {
-      commentSpan.textContent = displayText;
+      commentSpan.textContent = originalText;
       setupBlurUI(commentBody, container);
     }
   }
