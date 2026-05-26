@@ -1,20 +1,20 @@
 ﻿namespace MainServer.Dtos.FromClient;
 
-/// <summary>
-/// 댓글 정화 요청 DTO
-/// </summary>
-public struct RequestCleaningCommentsDto
-{
-    /// <summary>
-    /// 댓글 리스트
-    /// </summary>
-    public List<RequestComment> Comments { get; set; }
-}
+///// <summary>
+///// 댓글 정화 요청 DTO
+///// </summary>
+//public struct RequestCleaningCommentsDto
+//{
+//    /// <summary>
+//    /// 댓글 리스트
+//    /// </summary>
+//    public List<RequestComment> Comments { get; set; }
+//}
 
 /// <summary>
 /// 댓글 DTO
 /// </summary>
-public struct RequestComment
+public struct RequestCommentDto
 {
     /// <summary>
     /// 댓글 ID

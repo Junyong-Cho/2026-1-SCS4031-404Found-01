@@ -3,14 +3,11 @@ import uvicorn
 from pydantic import BaseModel, Field
 from main import refine_comment#, ToxicClassificationError
 
-class ReqComment(BaseModel) :
+class RequestCommentDto(BaseModel) :
     id : str
     text : str
 
-class RequestCommentsDto(BaseModel) :
-    comments : list[ReqComment]
-
-class ResComment(BaseModel) :
+class ResponseCommentDto(BaseModel) :
     id : str
     isToxic : bool = False
     # toxicType : str = '' # 기존: "Politics|Origin|Profanity" 형태
@@ -20,68 +17,32 @@ class ResComment(BaseModel) :
     # processType: str = "" # dictionary_replacement / llm_refinement / pass 구분용 필드
     # originalText: str | None = None
 
-class Stat(BaseModel) :
-    toxicCount : int = 0
-    totalScanned : int
-
-class ResponseCommentsDto(BaseModel) :
-    results : list[ResComment]
-    stats : Stat
-
 app = FastAPI()
 
 @app.get('/')
 def index_page() :
     return 'index page'
 
-@app.post('/request', response_model = ResponseCommentsDto)
-async def cleaning_comment(dto : RequestCommentsDto) :
+@app.post('/request', response_model = ResponseCommentDto)
+async def cleaning_comment(dto : RequestCommentDto) :
     print('일단 요청 도착')
 
-    total = len(dto.comments)
-    stat = Stat(totalScanned = total)
-    results = [None] * total
+    try :
+        refined = await refine_comment(dto.text)
 
-    for i in range(total):
-        comment = dto.comments[i]
-        res = ResComment(id=comment.id)#, originalText=comment.text)
-        print(comment.text+'- 요청 처리')
-        try:
-            refined = await refine_comment(comment.text)
+        response = ResponseCommentDto(
+            id = dto.id,
+            isToxic = refined["toxic_result"]["is_toxic"]
+        )
 
-            is_toxic = refined["toxic_result"]["is_toxic"]
+        if response.isToxic :
+            response.convertedText = refined["refined_text"]
 
-            # labels = refined.get("labels", [])
-            # process_type = refined.get("process_type", "")
+        return response
+    except Exception as e:
+        return None
+        
 
-            res.isToxic = is_toxic
-            # res.toxicType = "|".join(labels)
-            # res.toxicTypes = labels
-            # res.processType = process_type
-
-            if is_toxic:
-                stat.toxicCount += 1
-                res.convertedText = refined["refined_text"]
-
-        except Exception as e:
-            res.isToxic = True # 독성 판단 실패 시 원문 노출 방지
-            # res.toxicType = "ClassificationError" 
-
-            # res.toxicTypes = []
-            res.convertedText = "악플 판단에 실패한 댓글입니다." # 독성 판단 실패 시 정화하지 않고 고정 안내문 출력
-
-            # res.processType = "toxic_classification_error" # 평가에서 별도 제외/집계할 수 있도록 처리 타입 기록
-
-            stat.toxicCount += 1 # 차단된 댓글이므로 toxicCount++
-
-            print("독성 판단 실패")
-            print("원문 " + comment.text)
-            print("에러 " + str(e))
-        print('결과 ' + str(res.isToxic))
-        results[i] = res
-
-    response = ResponseCommentsDto(results = results, stats = stat)
-    return response
 
 
 # 비동기 호출 용 / 댓글 1개 즉시 return 하는 구조
