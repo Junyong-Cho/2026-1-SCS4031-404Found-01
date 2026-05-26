@@ -34,7 +34,7 @@ let commentQueue = [];
 const processedIds = new Set();
 const observationTimers = new Map();
 
-const MAX_BATCH_SIZE = 15; // 한 번에 보낼 최대 댓글 수
+const MAX_BATCH_SIZE = 1; // 한 번에 보낼 최대 댓글 수
 const MAX_RETRY = 2; // 최대 재시도 횟수
 
 function escapeRegExp(value) {
