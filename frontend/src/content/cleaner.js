@@ -173,12 +173,15 @@ export async function renderCleanResult(result, container, config) {
       commentBody.style.cursor = "";
       commentBody.title = "";
 
-      // 서버 판단 악플이었을 때만 주황색 세탁 완료 배지 주입
-      if (result.isToxic) {
+      // 주황색 세탁 완료 배지 주입
+      if (isTargetToHide) {
         injectCleanBadge(container, config);
       }
+      injectOriginalTextToggleBtn(container, commentSpan, originalText, displayText);
     } else {
-      commentSpan.textContent = displayText;
+      commentSpan.textContent = originalText;
+      const oldToggleBtn = container.querySelector(".laundry-toggle-orig-btn");
+      if (oldToggleBtn) oldToggleBtn.remove();
       setupBlurUI(commentBody, container);
     }
   }
@@ -207,6 +210,9 @@ export function restoreAllComments(config) {
     const commentBody = querySelectorWithFallback(container, config.comment, "commentBody");
     const badge = container.querySelector(".laundry-clean-badge");
     const skeleton = container.querySelector(".laundry-loading-skeleton");
+
+    const toggleBtn = container.querySelector(".laundry-toggle-orig-btn");
+    if (toggleBtn) toggleBtn.remove();
 
     if (skeleton) skeleton.remove();
     if (badge) badge.remove();
@@ -340,4 +346,78 @@ export function updateLaundryStats(stats) {
       }
     },
   );
+}
+
+/**
+ * 2단계 순화 모드에서 정화된 댓글 하단에 "원문 보기" 토글 버튼을 주입하는 함수
+ * 위치: 유튜브 '답글' 버튼의 오른쪽 배치
+ */
+function injectOriginalTextToggleBtn(container, commentSpan, originalText, displayText) {
+  // 중복 생성 방지
+  if (container.querySelector(".laundry-toggle-orig-btn")) return;
+
+  const toolbar = querySelectorWithFallback(container, "#toolbar", "toolbar");
+  if (!toolbar) return;
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.className = "laundry-toggle-orig-btn";
+  toggleBtn.innerText = "원문 보기";
+
+  toggleBtn.title = "순화 전 원래 댓글 보기";
+
+  Object.assign(toggleBtn.style, {
+    position: "static",
+    background: "none",
+    border: "none",
+    color: "var(--yt-spec-text-primary, #0f0f0f)",
+    fontSize: "12px",
+    fontWeight: "500",
+    lineHeight: "16px",
+    cursor: "pointer",
+    padding: "0 12px",
+    height: "32px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontFamily: '"Roboto", "Arial", sans-serif',
+    borderRadius: "16px",
+    transition: "background-color 0.1s ease, color 0.1s ease",
+    marginLeft: "2px",
+    marginRight: "2px",
+    userSelect: "none",
+  });
+
+  toggleBtn.onmouseenter = () => {
+    toggleBtn.style.backgroundColor = "#FFE2A3";
+  };
+  toggleBtn.onmouseleave = () => {
+    toggleBtn.style.backgroundColor = "transparent";
+  };
+  // 토글 클릭 이벤트 핸들러 (동적 툴팁 체인지 포함)
+  let isShowingOriginal = false;
+  toggleBtn.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!isShowingOriginal) {
+      // 1. 원문 표시 상태로 전환
+      commentSpan.textContent = originalText;
+      toggleBtn.innerText = "순화문 보기";
+      toggleBtn.title = "정화된 순화문 보기";
+      isShowingOriginal = true;
+    } else {
+      // 2. 순화문 표시 상태로 복원
+      commentSpan.textContent = displayText;
+      toggleBtn.innerText = "원문 보기";
+      toggleBtn.title = "순화 전 원래 댓글 보기";
+      isShowingOriginal = false;
+    }
+  };
+
+  const replyBtnEnd = toolbar.querySelector("#reply-button-end");
+  if (replyBtnEnd) {
+    toolbar.insertBefore(toggleBtn, replyBtnEnd.nextSibling);
+  } else {
+    toolbar.appendChild(toggleBtn);
+  }
 }
