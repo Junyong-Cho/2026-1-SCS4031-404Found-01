@@ -296,5 +296,6 @@ async function sendTokenToBackend(jwt) {
   } catch (error) {
     console.error("통신 흐름 실패:", error.message);
     chrome.storage.local.set({ isLoggedIn: false, userEmail: "" });
+    chrome.runtime.sendMessage({ action: "loginCancelled" });
   }
 }
