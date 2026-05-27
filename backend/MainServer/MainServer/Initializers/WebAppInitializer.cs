@@ -52,6 +52,30 @@ f_word varchar(255),
 primary key (user_id, f_word),
 constraint user_id_reference foreign key (user_id) references users(user_id) on delete cascade
 );
+
+create table if not exists user_feedback(
+id uuid primary key default uuidv7(),
+video_url text not null,
+plain_text text not null,
+converted_text text,
+feedback text,
+created_at timestamp with time zone default current_timestamp,
+status varchar(255) default 'unverified'
+);
+
+create table if not exists tags(
+tag varchar(255) primary key,
+count int default 1
+);
+
+create table if not exists feedback_tag(
+feedback_id uuid,
+tag varchar(255),
+
+constraint ref_feedback_id foreign key (feedback_id) references user_feedback(id),
+constraint ref_tag foreign key (tag) references tags(tag),
+constraint p_key_feedback_tag primary key (feedback_id, tag)
+);
 ";
         await dbCon.ExecuteAsync(query);
     }
