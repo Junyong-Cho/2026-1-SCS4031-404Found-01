@@ -3,11 +3,12 @@ import {
   getConfig,
   extractLcId,
   applyBlurAndSkeleton,
-  renderCleanResults,
+  renderCleanResultFromServer,
   renderCleanResult,
   restoreAllComments,
   cleanCache,
   querySelectorWithFallback,
+  updateLaundryStats,
 } from "./cleaner.js";
 import "./injector.css";
 import "./feedback/feedback.css";
@@ -34,8 +35,8 @@ let commentQueue = [];
 const processedIds = new Set();
 const observationTimers = new Map();
 
-const MAX_BATCH_SIZE = 1; // 한 번에 보낼 최대 댓글 수
-const MAX_RETRY = 2; // 최대 재시도 횟수
+const MAX_RETRY = 2; // 최초 요청 포함 총 3번 (재시도 2번)
+const REQUEST_TIMEOUT_MS = 20000; // 20초 타임아웃
 
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -66,6 +67,18 @@ function shouldSkipBlur(container) {
   return container.dataset.userRevealed === "true";
 }
 
+/**
+ * 서버 전송용 텍스트 생성: 원본 텍스트에서 금지어를 아잉❤️로 치환한 텍스트
+ */
+function buildServerText(rawText, personalKeywords) {
+  if (!personalKeywords || personalKeywords.length === 0) return rawText;
+  return personalKeywords.reduce((currentText, keyword) => {
+    if (!keyword) return currentText;
+    const regex = new RegExp(escapeRegExp(keyword), "g");
+    return currentText.replace(regex, "아잉❤️");
+  }, rawText);
+}
+
 function queueComment(container, config, rawText, personalKeywords, isPriority = false) {
   const lcId = container.getAttribute("data-lc-id");
   if (!lcId || !rawText) return;
@@ -74,17 +87,11 @@ function queueComment(container, config, rawText, personalKeywords, isPriority =
     container.dataset.originalText = rawText;
   }
 
-  const { text, foundKeywords } = replacePersonalKeywords(rawText, personalKeywords);
+  const { foundKeywords } = replacePersonalKeywords(rawText, personalKeywords);
   if (foundKeywords.length > 0) {
-    const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
-    if (commentSpan) commentSpan.textContent = text;
-    container.dataset.localSanitizedText = text;
+    container.dataset.localSanitizedText = buildServerText(rawText, personalKeywords);
   } else {
     delete container.dataset.localSanitizedText;
-    const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
-    if (commentSpan && container.dataset.originalText) {
-      commentSpan.textContent = container.dataset.originalText;
-    }
   }
 
   if (!processedIds.has(lcId)) {
@@ -92,18 +99,18 @@ function queueComment(container, config, rawText, personalKeywords, isPriority =
       applyBlurAndSkeleton(container, config);
     }
 
+    const serverText = buildServerText(rawText, personalKeywords);
+
     if (isPriority) {
-      commentQueue.unshift({ id: lcId, text });
+      commentQueue.unshift({ id: lcId, text: serverText, _retryCount: 0 });
     } else {
-      commentQueue.push({ id: lcId, text });
+      commentQueue.push({ id: lcId, text: serverText, _retryCount: 0 });
     }
     processedIds.add(lcId);
-  }
-}
 
-function queueCommentByContainer(container, config, personalKeywords) {
-  const rawText = getCommentText(container, config);
-  queueComment(container, config, rawText, personalKeywords);
+    // 큐에 넣는 즉시 비동기로 전송 처리 시작
+    sendNext();
+  }
 }
 
 function reprocessCommentsForKeywordChange(config, oldKeywords = [], newKeywords = []) {
@@ -122,108 +129,108 @@ function reprocessCommentsForKeywordChange(config, oldKeywords = [], newKeywords
     const hasRemoved = removedKeywords.some((keyword) => originalText.includes(keyword));
     if (!hasAdded && !hasRemoved) return;
 
-    cleanCache.delete(lcId);
-    processedIds.delete(lcId);
-    delete container.dataset.userRevealed;
-
-    const { text, foundKeywords } = replacePersonalKeywords(originalText, newKeywords);
+    const { foundKeywords } = replacePersonalKeywords(originalText, newKeywords);
     if (foundKeywords.length > 0) {
-      const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
-      if (commentSpan) commentSpan.textContent = text;
-      container.dataset.localSanitizedText = text;
+      container.dataset.localSanitizedText = buildServerText(originalText, newKeywords);
     } else {
       delete container.dataset.localSanitizedText;
-      const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
-      if (commentSpan) commentSpan.textContent = originalText;
     }
+
+    if (cleanCache.has(lcId)) {
+      const cached = cleanCache.get(lcId);
+      delete container.dataset.userRevealed;
+      renderCleanResult(cached, container, config);
+      return;
+    }
+
+    processedIds.delete(lcId);
+    delete container.dataset.userRevealed;
 
     if (!shouldSkipBlur(container)) {
       applyBlurAndSkeleton(container, config);
     }
-    // 금지어 실시간 추가/변경 건은 화면 최우선 처리를 위해 상단 주입
-    commentQueue.unshift({ id: lcId, text });
+
+    const serverText = buildServerText(originalText, newKeywords);
+    commentQueue.unshift({ id: lcId, text: serverText, _retryCount: 0 });
     processedIds.add(lcId);
   });
 
-  if (commentQueue.length > 0) {
-    flushQueue();
-  }
+  sendNext();
 }
 
-const flushQueue = async () => {
-  if (!chrome || !chrome.runtime || !chrome.runtime.id) return;
+/**
+ * [동시 전송] 큐에 쌓인 항목들을 기다리지 않고 한 번에 모두 전송
+ */
+function sendNext() {
+  if (commentQueue.length === 0) return;
 
-  const settings = await chrome.storage.local.get(["serviceActive", "filterStep"]);
-  if (!settings.serviceActive || commentQueue.length === 0) return;
-
-  const chunk = commentQueue.splice(0, MAX_BATCH_SIZE);
-
-  const payload = {
-    comments: chunk.map((c) => ({
-      id: String(c.id),
-      text: String(c.text),
-    })),
-  };
-
-  console.log("[댓글세탁소] 서버 전송 데이터 (Request Body)", JSON.stringify(payload, null, 2));
-
-  chrome.runtime.sendMessage({ type: "PROCESS_COMMENTS", data: payload }, (response) => {
-    if (chrome.runtime.lastError || !response || response.error) {
-      console.error("[청크 전송 실패] 재시도 큐에 반환합니다.", chrome.runtime.lastError || response?.error);
-
-      const retryChunk = chunk
-        .map((c) => ({ ...c, _retryCount: (c._retryCount || 0) + 1 }))
-        .filter((c) => c._retryCount <= MAX_RETRY);
-
-      if (retryChunk.length > 0) {
-        commentQueue.unshift(...retryChunk);
-      }
+  chrome.storage.local.get("serviceActive", (settings) => {
+    if (!settings.serviceActive || commentQueue.length === 0) {
       return;
     }
 
-    if (response && response.results) {
-      console.log("[댓글세탁소] 서버 응답 데이터 (Response Body)", JSON.stringify(response, null, 2));
+    const currentBatch = [...commentQueue];
+    commentQueue = [];
 
-      const rawStep = settings.filterStep !== undefined ? settings.filterStep : "2";
-      const currentStep = String(rawStep);
+    currentBatch.forEach((item) => {
+      const attemptNumber = (item._retryCount || 0) + 1;
+      const totalAttempts = MAX_RETRY + 1;
 
-      const enrichedResponse = {
-        ...response,
-        results: response.results.map((item) => {
-          const matchedChunkItem = chunk.find((c) => String(c.id) === String(item.id));
-
-          if (matchedChunkItem && matchedChunkItem.text && matchedChunkItem.text.includes("아잉")) {
-            return {
-              ...item,
-              filterStep: currentStep,
-              convertedText: String(matchedChunkItem.text),
-            };
-          }
-
-          try {
-            const el = document.querySelector(`[data-lc-id="${item.id}"]`);
-            if (el && el.dataset && el.dataset.localSanitizedText) {
-              return {
-                ...item,
-                filterStep: currentStep,
-                convertedText: String(el.dataset.localSanitizedText),
-              };
-            }
-          } catch (e) {}
-
-          return {
-            ...item,
-            filterStep: currentStep,
-          };
-        }),
+      const payload = {
+        id: String(item.id),
+        text: String(item.text),
       };
 
-      if (typeof renderCleanResults === "function") {
-        renderCleanResults(enrichedResponse);
-      }
-    }
+      console.log(`[댓글세탁소] [동시 전송] 서버 전송 (${attemptNumber}/${totalAttempts}) id=${item.id}`);
+
+      let isSettled = false;
+
+      const timeoutId = setTimeout(() => {
+        if (isSettled) return;
+        isSettled = true;
+
+        console.warn(`[댓글세탁소] 응답 타임아웃 (${attemptNumber}/${totalAttempts}) id=${item.id}`);
+
+        if (attemptNumber < totalAttempts) {
+          commentQueue.push({ ...item, _retryCount: attemptNumber });
+          sendNext();
+        }
+      }, REQUEST_TIMEOUT_MS);
+
+      chrome.runtime.sendMessage({ type: "PROCESS_COMMENTS", data: payload }, (response) => {
+        if (isSettled) return;
+        isSettled = true;
+        clearTimeout(timeoutId);
+
+        if (chrome.runtime.lastError || !response || response.error) {
+          console.error(
+            `[댓글세탁소] 전송 실패 (${attemptNumber}/${totalAttempts}) id=${item.id}`,
+            chrome.runtime.lastError || response?.error,
+          );
+
+          if (attemptNumber < totalAttempts) {
+            commentQueue.push({ ...item, _retryCount: attemptNumber });
+            sendNext();
+          }
+          return;
+        }
+
+        if (response && response.id !== undefined) {
+          console.log(`[댓글세탁소] 서버 응답 완료 id=${response.id}`);
+
+          updateLaundryStats({
+            totalScanned: 1,
+            toxicCount: response.isToxic ? 1 : 0,
+          });
+
+          if (typeof renderCleanResultFromServer === "function") {
+            renderCleanResultFromServer(response);
+          }
+        }
+      });
+    });
   });
-};
+}
 
 function initObservation() {
   const config = getConfig();
@@ -266,7 +273,6 @@ const commentObserver = new IntersectionObserver(
           return;
         }
 
-        // 현재 큐 버퍼 안에 이미 있다면 무시하되 시선이 다시 왔으므로 최상단으로 옮길 수 있게 가드 해제
         if (commentQueue.some((item) => item.id === lcId)) {
           return;
         }
@@ -279,6 +285,7 @@ const commentObserver = new IntersectionObserver(
           clearTimeout(observationTimers.get(target));
         }
 
+        // 800ms 디바운스 대기 후 전송 절차 진행
         const timer = setTimeout(() => {
           if (processedIds.has(lcId) && !cleanCache.has(lcId) && !commentQueue.some((item) => item.id === lcId)) {
             return;
@@ -286,35 +293,37 @@ const commentObserver = new IntersectionObserver(
 
           const commentEl = querySelectorWithFallback(target, config.comment, "commentBody");
           if (commentEl) {
-            let text = commentEl.innerText.trim();
-            const sanitized = replacePersonalKeywords(text, personalKeywords);
+            const rawText = commentEl.innerText.trim();
 
             if (!target.dataset.originalText) {
-              target.dataset.originalText = text;
+              target.dataset.originalText = rawText;
             }
 
-            if (sanitized.foundKeywords.length > 0) {
-              const commentSpan = querySelectorWithFallback(target, config.commentSpan, "commentSpan");
-              if (commentSpan) commentSpan.textContent = sanitized.text;
-              target.dataset.localSanitizedText = sanitized.text;
+            const { foundKeywords } = replacePersonalKeywords(rawText, personalKeywords);
+            if (foundKeywords.length > 0) {
+              target.dataset.localSanitizedText = buildServerText(rawText, personalKeywords);
             } else {
-              delete target.dataset.localSanitizedText;
+              delete container?.dataset?.localSanitizedText; // 스코프 에러 방지를 위해 옵셔널 체이닝 추가 및 보완 가능
               const commentSpan = querySelectorWithFallback(target, config.commentSpan, "commentSpan");
-              if (commentSpan) commentSpan.textContent = target.dataset.originalText || text;
+              if (commentSpan) commentSpan.textContent = target.dataset.originalText || rawText;
             }
 
             if (!commentQueue.some((item) => item.id === lcId)) {
               if (!shouldSkipBlur(target)) {
                 applyBlurAndSkeleton(target, config);
               }
-              // 🌟 [시선 역행 방지] 다시 올라왔을 때 눈앞에 있는 댓글이므로 unshift로 최상단 정렬 주입
+
+              const serverText = buildServerText(rawText, personalKeywords);
               commentQueue.unshift({
                 id: lcId,
-                text: sanitized.text,
+                text: serverText,
+                _retryCount: 0,
               });
               processedIds.add(lcId);
             }
             observationTimers.delete(target);
+
+            sendNext();
           }
         }, 800);
 
@@ -388,7 +397,6 @@ chrome.storage.onChanged.addListener(async (changes, areaName) => {
   }
 });
 
-setInterval(flushQueue, 1500);
 startService();
 
 async function reprocessAllVisibleComments() {
@@ -408,10 +416,7 @@ async function reprocessAllVisibleComments() {
     const commentEl = querySelectorWithFallback(container, config.comment, "commentBody");
     if (commentEl) {
       const rawText = commentEl.innerText.trim();
-      // 재프로세싱 시에도 최상단 역행 방어 적용
       queueComment(container, config, rawText, personalKeywords, true);
     }
   });
-
-  if (commentQueue.length > 0) flushQueue();
 }
