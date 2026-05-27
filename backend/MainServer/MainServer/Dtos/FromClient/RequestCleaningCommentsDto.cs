@@ -1,25 +1,20 @@
 ﻿namespace MainServer.Dtos.FromClient;
 
-/// <summary>
-/// 댓글 정화 요청 DTO
-/// </summary>
-public struct RequestCleaningCommentsDto
-{
-    /// <summary>
-    /// 유저 설정
-    /// </summary>
-    public string UserSetting { get; set; }
-
-    /// <summary>
-    /// 댓글 리스트
-    /// </summary>
-    public List<RequestComment> Comments { get; set; }
-}
+///// <summary>
+///// 댓글 정화 요청 DTO
+///// </summary>
+//public struct RequestCleaningCommentsDto
+//{
+//    /// <summary>
+//    /// 댓글 리스트
+//    /// </summary>
+//    public List<RequestComment> Comments { get; set; }
+//}
 
 /// <summary>
 /// 댓글 DTO
 /// </summary>
-public struct RequestComment
+public struct RequestCommentDto
 {
     /// <summary>
     /// 댓글 ID
@@ -30,9 +25,4 @@ public struct RequestComment
     /// 댓글 내용
     /// </summary>
     public string Text { get; set; }
-
-    /// <summary>
-    /// Text에서 감지된 금지어 리스트
-    /// </summary>
-    public List<string> DetectedKeywords { get; set; }
 }
