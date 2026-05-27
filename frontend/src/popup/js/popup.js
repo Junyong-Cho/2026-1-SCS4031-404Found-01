@@ -16,6 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const addKeywordBtn = document.getElementById("add-keyword"); // 키워드 추가 버튼
   const keywordTagsContainer = document.getElementById("keyword-tags"); // 추가된 키워드 태그가 담길 컨테이너
   const logoutBtn = document.getElementById("btn-logout"); // 로그아웃 버튼
+  const loginBtn = document.getElementById("btn-login"); // 로그인 버튼
   const userEmailElem = document.getElementById("user-email"); // 유저 이메일 표시 영역
   const userInfoBar = document.getElementById("user-info-bar"); // 유저 정보 표시 바
 
@@ -29,6 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
     addKeywordBtn,
     keywordTagsContainer,
     logoutBtn,
+    loginBtn,
     userEmailElem,
     userInfoBar,
     filterSettings: document.querySelector(".filter-settings"),
@@ -75,11 +77,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // (3) 로그인 상태 UI 처리
     if (res.isLoggedIn) {
-      userInfoBar.style.display = "flex";
+      userEmailElem.style.display = "inline";
       userEmailElem.innerText = res.userEmail || "";
+      logoutBtn.style.display = "inline";
+      loginBtn.style.display = "none";
+
       keywordInput.placeholder = "차단할 단어 입력";
     } else {
-      userInfoBar.style.display = "none";
+      userEmailElem.style.display = "none";
+      logoutBtn.style.display = "none";
+      loginBtn.style.display = "inline";
+
       keywordInput.placeholder = "클릭하여 로그인 후 이용";
     }
 
@@ -208,6 +216,13 @@ document.addEventListener("DOMContentLoaded", () => {
         window.location.reload(); // UI 갱신을 위한 새로고침
       }
     });
+  });
+
+  /** 구글 로그인 버튼 클릭 핸들러 */
+  loginBtn.addEventListener("click", () => {
+    if (confirm("구글 로그인을 진행하시겠습니까?")) {
+      chrome.runtime.sendMessage({ action: "login" }, () => window.close());
+    }
   });
 
   // --- 4. 사용자 설정 변경 감지 및 저장 ---
