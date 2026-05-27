@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="icon.png" />
+    <title>댓글세탁소 관리자 페이지</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="top-bar">
+      <div class="logo">댓글세탁소 관리자용 대시보드</div>
+    </header>
+
+    <div class="dashboard-wrapper">
+      <main class="main-content">
+        <header class="main-header">
+          <div class="header-title-zone">
+            <h2>피드백 목록</h2>
+            <p>사용자로부터 접수된 의견을 확인하고 관리할 수 있습니다.</p>
+          </div>
+          <div class="date-picker-zone">
+            <input type="date" id="start-date" />
+            <span>~</span>
+            <input type="date" id="end-date" />
+          </div>
+        </header>
+
+        <div class="filter-control-line">
+          <div class="tab-group" id="status-tabs">
+            <button class="tab active" data-status="전체">전체</button>
+            <button class="tab" data-status="미확인">미확인</button>
+            <button class="tab" data-status="확인완료">확인완료</button>
+            <button class="tab" data-status="반려">반려</button>
+          </div>
+          <div class="search-sort-group">
+            <select class="sort-select" id="sort-select">
+              <option value="latest">최신순</option>
+              <option value="oldest">과거순</option>
+            </select>
+            <div class="search-box">
+              <input type="text" id="search-input" placeholder="댓글 내용 검색" />
+            </div>
+          </div>
+        </div>
+
+        <div class="tag-filter-bar" id="tag-filters">
+          <button class="tag-filter-btn active" data-tag="전체">전체</button>
+          <button class="tag-filter-btn" data-tag="오탐지">오탐지</button>
+          <button class="tag-filter-btn" data-tag="순화가 어색함">순화가 어색함</button>
+          <button class="tag-filter-btn" data-tag="의미가 바뀜">의미가 바뀜</button>
+          <button class="tag-filter-btn" data-tag="너무 과하게 정화됨">너무 과하게 정화됨</button>
+          <button class="tag-filter-btn" data-tag="정화가 부족함">정화가 부족함</button>
+          <button class="tag-filter-btn" data-tag="문맥 이해 실패">문맥 이해 실패</button>
+          <button class="tag-filter-btn" data-tag="기타">기타</button>
+        </div>
+
+        <div class="table-container">
+          <table class="feedback-table">
+            <thead>
+              <tr>
+                <th>번호</th>
+                <th>접수 일시</th>
+                <th>원본 댓글</th>
+                <th>정화된 댓글</th>
+                <th>태그</th>
+                <th>의견 내용</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody id="feedback-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="pagination-line">
+          <div class="pagination" id="pagination-zone"></div>
+          <div class="page-size-selector">
+            <select id="page-size-select">
+              <option value="5">5개씩 보기</option>
+              <option value="10" selected>10개씩 보기</option>
+            </select>
+          </div>
+        </div>
+      </main>
+
+      <aside class="right-panel">
+        <section class="summary-section">
+          <h3>전체 요약</h3>
+          <div class="summary-card">
+            <div class="summary-item">전체 접수 <strong id="total-count">0</strong></div>
+            <div class="summary-item unverified">미확인 <strong id="unverified-count">0</strong></div>
+            <div class="summary-item verified">확인완료 <strong id="verified-count">0</strong></div>
+            <div class="summary-item rejected">반려 <strong id="rejected-count">0</strong></div>
+          </div>
+        </section>
+
+        <section class="chart-section">
+          <h3>태그별 분포</h3>
+          <div class="mock-chart">
+            <div class="chart-circle" id="dynamic-chart">
+              <div class="chart-center-text">전체<br /><span id="chart-total">0</span>건</div>
+            </div>
+          </div>
+          <ul class="tag-list" id="tag-distribution-list"></ul>
+        </section>
+      </aside>
+    </div>
+
+    <script src="main.js"></script>
+  </body>
+</html>

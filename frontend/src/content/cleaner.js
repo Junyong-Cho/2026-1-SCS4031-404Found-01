@@ -244,7 +244,9 @@ function injectFeedbackButton(container, result) {
   feedbackBtn.title = "정화 결과가 부적절한가요?";
 
   feedbackBtn.onclick = () => {
-    showFeedbackModal(result.id);
+    const plainText = container.dataset.originalText || "";
+    const convertedText = result.convertedText || "";
+    showFeedbackModal(result.id, plainText, convertedText);
   };
 
   toolbar.appendChild(feedbackBtn);

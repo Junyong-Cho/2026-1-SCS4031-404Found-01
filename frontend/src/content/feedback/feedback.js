@@ -1,7 +1,7 @@
 /**
  * 커스텀 의견 보내기 모달을 생성하고 표시하는 함수
  */
-export function showFeedbackModal(commentId) {
+export function showFeedbackModal(commentId, plainText, convertedText) {
   if (document.querySelector(".laundry-modal-overlay")) return;
 
   const modalOverlay = document.createElement("div");
@@ -58,10 +58,8 @@ export function showFeedbackModal(commentId) {
     if (e.target === modalOverlay) closeModal();
   };
 
-  // 이벤트: 전송
-  modalOverlay.querySelector(".modal-submit").onclick = () => {
+  modalOverlay.querySelector(".modal-submit").onclick = async () => {
     const selectedTags = Array.from(modalOverlay.querySelectorAll(".feedback-tag.active")).map((el) => el.textContent);
-
     const additionalReason = modalOverlay.querySelector("#feedback-text").value.trim();
 
     if (selectedTags.length === 0 && !additionalReason) {
@@ -69,28 +67,72 @@ export function showFeedbackModal(commentId) {
       return;
     }
 
-    // 서버로 날릴 최종 데이터 뭉치 조합
+    const { isLoggedIn, serverToken } = await chrome.storage.local.get(["isLoggedIn", "serverToken"]);
+
+    if (!isLoggedIn || !serverToken) {
+      alert("로그인이 필요한 기능입니다. 확장 프로그램 팝업에서 로그인을 진행해 주세요.");
+      return;
+    }
+
+    // 서버로 날릴 최종 데이터
     const finalFeedback = {
       tags: selectedTags,
       reason: additionalReason,
+      plainText: plainText,
+      convertedText: convertedText,
     };
 
-    sendFeedbackToServer(commentId, finalFeedback);
-    modalOverlay.remove();
-    alert("의견이 접수되었습니다. 감사합니다!");
+    sendFeedbackToServer(commentId, finalFeedback, (response) => {
+      modalOverlay.remove();
+
+      if (response && response.status === "success") {
+        alert("의견이 성공적으로 접수되었습니다. 감사합니다!");
+      } else if (response && response.error && response.error.includes("401")) {
+        alert(
+          "로그인이 필요하거나 세션이 만료되었습니다.\n우측 상단의 댓글세탁소 팝업을 열어 로그인을 진행해 주세요! 🧼",
+        );
+      } else {
+        alert("서버 연결이 원활하지 않습니다. 잠시 후 다시 시도해 주세요.");
+      }
+    });
   };
 }
 
 /**
  * 서버로 피드백 데이터를 전송하는 내부 함수
  */
-// function sendFeedbackToServer(commentId, feedbackData) {
-//   chrome.runtime.sendMessage({
-//     type: "SEND_FEEDBACK",
-//     data: {
-//       id: commentId,
-//       tags: feedbackData.tags,
-//       reason: feedbackData.reason
-//     },
-//   });
-// }
+function sendFeedbackToServer(commentId, feedbackData, callback) {
+  try {
+    chrome.runtime.sendMessage(
+      {
+        type: "SEND_FEEDBACK",
+        data: {
+          id: null,
+          tags: feedbackData.tags,
+          reason: feedbackData.reason,
+          videoUrl: window.location.href,
+          plainText: feedbackData.plainText,
+          convertedText: feedbackData.convertedText,
+        },
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          console.warn("[댓글세탁소] 런타임 메시지 전송 에러:", chrome.runtime.lastError.message);
+          if (typeof callback === "function") {
+            callback({ status: "error", error: chrome.runtime.lastError.message });
+          }
+          return;
+        }
+
+        if (typeof callback === "function") {
+          callback(response);
+        }
+      },
+    );
+  } catch (e) {
+    console.warn("sendFeedbackToServer failed:", e);
+    if (typeof callback === "function") {
+      callback({ status: "error", error: e.message });
+    }
+  }
+}
