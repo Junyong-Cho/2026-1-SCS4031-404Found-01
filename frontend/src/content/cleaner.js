@@ -41,6 +41,7 @@ export function querySelectorWithFallback(root, selectors, name = "unknown") {
   console.warn(`[DOM 매핑 오류] ${name} 요소를 찾지 못했습니다. 시도한 선택자: ${selectorList.join(" | ")}`, root);
   return null;
 }
+
 /**
  * 댓글 작성 시간 링크(href)에서 유튜브 댓글의 고유 식별자인 'lc' 값을 추출
  * @param {string} href - 댓글 작성 시간 요소의 링크 주소
@@ -52,7 +53,6 @@ export function extractLcId(href) {
     const url = new URL(href, "https://www.youtube.com");
     let lc = url.searchParams.get("lc");
 
-    // 파라미터로 못 찾을 경우를 대비한 정규식 처리
     if (!lc && href.includes("lc=")) {
       const match = href.match(/lc=([^&]+)/);
       lc = match ? match[1] : null;
@@ -66,36 +66,28 @@ export function extractLcId(href) {
 
 /**
  * 서버 응답이 오기 전, 댓글에 기본 블러 처리와 '세탁 중' 스켈레톤 UI를 적용
- * @param {HTMLElement} containerEl - 댓글 컨테이너 요소
- * @param {Object} config - 현재 환경 설정 객체
  */
 export async function applyBlurAndSkeleton(containerEl, config) {
   try {
-    // 1. 서비스 온오프 상태 확인 (기본값 false)
     const storage = await chrome.storage.local.get("serviceActive");
     const serviceActive = storage.serviceActive ?? false;
 
-    // 2. 서비스가 OFF라면 즉시 종료
     if (!serviceActive) return;
 
-    // 2.1. 사용자가 이미 1단계 블러를 클릭해 해제한 경우 재적용하지 않음
     if (containerEl.dataset.userRevealed === "true") return;
 
     const lcId = containerEl.getAttribute("data-lc-id") || "no-id";
 
-    // 3. 이미 정화된 이력이 캐시에 있다면 즉시 렌더링하고 종료
     if (cleanCache.has(lcId)) {
       renderCleanResult(cleanCache.get(lcId), containerEl, config);
       return;
     }
 
-    // 4. 요소 탐색 및 블러 적용 (서버 응답 전까지 즉시 가림)
     const commentBody = querySelectorWithFallback(containerEl, config.comment, "commentBody");
     if (commentBody) {
       commentBody.classList.add("comment-seeding-blur");
     }
 
-    // 5. 중복 스켈레톤 생성 방지 및 UI 삽입
     if (containerEl.querySelector(".laundry-loading-skeleton")) return;
 
     const skeletonEl = document.createElement("div");
@@ -110,7 +102,7 @@ export async function applyBlurAndSkeleton(containerEl, config) {
 }
 
 /**
- * 단일 댓글에 대해 서버로부터 받은 정화 결과(독성 여부, 순화 텍스트 등)를 실제 화면에 반영
+ * 단일 댓글에 대해 서버로부터 받은 정화 결과를 실제 화면에 반영
  */
 export async function renderCleanResult(result, container, config) {
   const commentBody = querySelectorWithFallback(container, config.comment, "commentBody");
@@ -129,27 +121,27 @@ export async function renderCleanResult(result, container, config) {
 
   if (!commentBody || !commentSpan) return;
 
-  const storage = await chrome.storage.local.get("personalKeywords");
+  const storage = await chrome.storage.local.get(["personalKeywords", "filterStep"]);
   const personalKeywords = storage.personalKeywords || [];
+  // filterStep은 result에 주입된 값 우선, 없으면 스토리지에서 읽음
+  const filterStep = String(result.filterStep ?? storage.filterStep ?? "2");
 
   const originalText = container.dataset.originalText || commentSpan.textContent;
-  const baseTargetText = result.convertedText || originalText;
 
-  let forceSanitizedText = null;
-  const hasKeyword = personalKeywords.some((keyword) => keyword && baseTargetText.includes(keyword));
+  // 금지어 포함 여부는 항상 원본 텍스트 기준으로 판단
+  const hasKeyword = personalKeywords.some((keyword) => keyword && originalText.includes(keyword));
 
-  if (hasKeyword) {
-    forceSanitizedText = personalKeywords.reduce((currentText, keyword) => {
-      if (!keyword) return currentText;
-      const regex = new RegExp(String(keyword).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
-      return currentText.replace(regex, "아잉❤️");
-    }, baseTargetText);
-  }
+  // 순화 표시용 텍스트: 서버 convertedText 기반에 금지어 추가 치환
+  const baseDisplayText = result.convertedText || originalText;
+  const sanitizedDisplayText = hasKeyword
+    ? personalKeywords.reduce((currentText, keyword) => {
+        if (!keyword) return currentText;
+        const regex = new RegExp(String(keyword).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+        return currentText.replace(regex, "아잉❤️");
+      }, baseDisplayText)
+    : baseDisplayText;
 
-  const displayText =
-    forceSanitizedText || result.convertedText || container.dataset.localSanitizedText || originalText;
   const isTargetToHide = result.isToxic || hasKeyword;
-  const filterStep = String(result.filterStep);
 
   // =========================================================================
   // [정화 대상 분기] 서버인증 악플이거나, 내가 등록한 금지어가 들어간 경우
@@ -164,21 +156,20 @@ export async function renderCleanResult(result, container, config) {
       delete container.dataset.userRevealed;
     }
 
-    // [2단계 : Refine / 순화 모드] 인 경우 -> 블러 걷어내고 순화문(아잉❤️ 포함) 노출
     if (filterStep === "2" || result.filterStep === "refine") {
-      commentSpan.textContent = displayText;
+      // [2단계 : 순화 모드] 블러 걷어내고 순화문 노출
+      commentSpan.textContent = sanitizedDisplayText;
       commentBody.classList.remove("comment-seeding-blur");
 
       commentBody.onclick = null;
       commentBody.style.cursor = "";
       commentBody.title = "";
 
-      // 주황색 세탁 완료 배지 주입
-      if (isTargetToHide) {
-        injectCleanBadge(container, config);
-      }
-      injectOriginalTextToggleBtn(container, commentSpan, originalText, displayText);
+      injectCleanBadge(container, config);
+      injectOriginalTextToggleBtn(container, commentSpan, originalText, sanitizedDisplayText);
     } else {
+      // [1단계 : 블러 모드] 원본 텍스트 유지 + 블러 UI 적용
+      // 블러 클릭 해제 시 원문(금지어 포함 원본)이 그대로 보여야 하므로 originalText 세팅
       commentSpan.textContent = originalText;
       const oldToggleBtn = container.querySelector(".laundry-toggle-orig-btn");
       if (oldToggleBtn) oldToggleBtn.remove();
@@ -186,10 +177,10 @@ export async function renderCleanResult(result, container, config) {
     }
   }
   // =========================================================================
-  // [완전 청정 분기] 서버도 깨끗하다고 했고 + 내 금지어도 없는 쌩 청정 댓글
+  // [완전 청정 분기]
   // =========================================================================
   else {
-    commentSpan.textContent = displayText;
+    commentSpan.textContent = baseDisplayText;
     commentBody.classList.remove("comment-seeding-blur");
 
     commentBody.onclick = null;
@@ -200,6 +191,9 @@ export async function renderCleanResult(result, container, config) {
 
     const existingFeedback = container.querySelector(".laundry-feedback-btn");
     if (existingFeedback) existingFeedback.remove();
+
+    const oldToggleBtn = container.querySelector(".laundry-toggle-orig-btn");
+    if (oldToggleBtn) oldToggleBtn.remove();
   }
 }
 
@@ -223,7 +217,6 @@ export function restoreAllComments(config) {
       commentBody.title = "";
     }
 
-    // 원본 텍스트 복원
     if (commentSpan && container.dataset.originalText) {
       commentSpan.textContent = container.dataset.originalText;
     }
@@ -234,10 +227,9 @@ export function restoreAllComments(config) {
 }
 
 /**
- * 의견 보내기 버튼을 생성하고 주입하는 함수
+ * 의견 보내기 버튼 주입
  */
 function injectFeedbackButton(container, result) {
-  // 중복 생성 방지
   if (container.querySelector(".laundry-feedback-btn")) return;
 
   const toolbar = querySelectorWithFallback(container, "#toolbar", "toolbar");
@@ -251,41 +243,38 @@ function injectFeedbackButton(container, result) {
   feedbackBtn.innerText = "의견 보내기";
   feedbackBtn.title = "정화 결과가 부적절한가요?";
 
-  // 클릭 이벤트: 피드백 폼 열기 또는 서버 전송
   feedbackBtn.onclick = () => {
-    showFeedbackModal(result.id);
+    const plainText = container.dataset.originalText || "";
+    const convertedText = result.convertedText || "";
+    showFeedbackModal(result.id, plainText, convertedText);
   };
 
   toolbar.appendChild(feedbackBtn);
 }
 
 /**
- * 서버에서 넘어온 다수의 댓글 정화 결과 리스트를 순회하며 렌더링 지시
- * @param {Object} data - 서버 응답 전체 객체 ({results, stats})
+ * 서버에서 넘어온 단일 댓글 정화 결과를 렌더링
+ * @param {Object} data - 서버 응답 객체 ({id, isToxic, convertedText})
  */
-export async function renderCleanResults(data) {
-  const { results, stats } = data;
-
-  const { filterStep = "2" } = await chrome.storage.local.get("filterStep");
+export async function renderCleanResultFromServer(data) {
+  const { filterStep } = await chrome.storage.local.get("filterStep");
   const config = getConfig();
 
-  results.forEach((result) => {
-    result.filterStep = String(filterStep);
-    cleanCache.set(result.id, result); // 캐시에 저장
+  const result = {
+    ...data,
+    filterStep: String(filterStep ?? "2"),
+  };
 
-    // data-lc-id 속성으로 미리 마킹해둔 DOM 요소를 찾아 렌더링
-    const container = document.querySelector(`[data-lc-id="${result.id}"]`);
-    if (!container) return;
+  cleanCache.set(result.id, result);
 
-    renderCleanResult(result, container, config);
-  });
+  const container = document.querySelector(`[data-lc-id="${result.id}"]`);
+  if (!container) return;
 
-  // 통계 수치 업데이트
-  if (stats) updateLaundryStats(stats);
+  renderCleanResult(result, container, config);
 }
 
 /**
- * 정화된 댓글 작성자의 아바타 우측 상단에 오렌지색 '정화 완료' 배지(점) 삽입
+ * 정화된 댓글 아바타에 오렌지색 배지 삽입
  */
 export function injectCleanBadge(container, config) {
   if (container.querySelector(".laundry-clean-badge")) return;
@@ -311,8 +300,9 @@ export function injectCleanBadge(container, config) {
   });
   authorThumbnail.appendChild(badge);
 }
+
 /**
- * 1단계(Blur) 처리된 댓글에 클릭 이벤트 리스너를 추가하여 클릭 시 내용을 볼 수 있게 함
+ * 1단계(Blur) 처리: 클릭 시 원문(금지어 포함 원본) 노출
  */
 export function setupBlurUI(element, container) {
   element.classList.add("comment-seeding-blur");
@@ -320,6 +310,12 @@ export function setupBlurUI(element, container) {
   element.title = "클릭하여 원본 보기";
   element.onclick = (e) => {
     e.preventDefault();
+    // 블러 해제 시 원문 복원 (commentSpan에 originalText 세팅)
+    const config = getConfig();
+    const commentSpan = querySelectorWithFallback(container, config.commentSpan, "commentSpan");
+    if (commentSpan && container.dataset.originalText) {
+      commentSpan.textContent = container.dataset.originalText;
+    }
     element.classList.remove("comment-seeding-blur");
     element.onclick = null;
     element.style.cursor = "";
@@ -331,8 +327,7 @@ export function setupBlurUI(element, container) {
 }
 
 /**
- * 정화 통계 데이터를 세션 스토리지에 업데이트하고 팝업 UI에 실시간 알림 전송
- * @param {Object} stats - 서버에서 전달받은 통계 데이터 ({totalScanned, toxicCount})
+ * 정화 통계 업데이트
  */
 export function updateLaundryStats(stats) {
   chrome.runtime.sendMessage(
@@ -342,18 +337,15 @@ export function updateLaundryStats(stats) {
     },
     (response) => {
       if (chrome.runtime.lastError) {
-        // 대기 중인 응답 에러 발생 시 조용히 처리
       }
     },
   );
 }
 
 /**
- * 2단계 순화 모드에서 정화된 댓글 하단에 "원문 보기" 토글 버튼을 주입하는 함수
- * 위치: 유튜브 '답글' 버튼의 오른쪽 배치
+ * 2단계 순화 모드: "원문 보기" 토글 버튼 주입
  */
 function injectOriginalTextToggleBtn(container, commentSpan, originalText, displayText) {
-  // 중복 생성 방지
   if (container.querySelector(".laundry-toggle-orig-btn")) return;
 
   const toolbar = querySelectorWithFallback(container, "#toolbar", "toolbar");
@@ -362,7 +354,6 @@ function injectOriginalTextToggleBtn(container, commentSpan, originalText, displ
   const toggleBtn = document.createElement("button");
   toggleBtn.className = "laundry-toggle-orig-btn";
   toggleBtn.innerText = "원문 보기";
-
   toggleBtn.title = "순화 전 원래 댓글 보기";
 
   Object.assign(toggleBtn.style, {
@@ -393,20 +384,18 @@ function injectOriginalTextToggleBtn(container, commentSpan, originalText, displ
   toggleBtn.onmouseleave = () => {
     toggleBtn.style.backgroundColor = "transparent";
   };
-  // 토글 클릭 이벤트 핸들러 (동적 툴팁 체인지 포함)
+
   let isShowingOriginal = false;
   toggleBtn.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
 
     if (!isShowingOriginal) {
-      // 1. 원문 표시 상태로 전환
       commentSpan.textContent = originalText;
       toggleBtn.innerText = "순화문 보기";
       toggleBtn.title = "정화된 순화문 보기";
       isShowingOriginal = true;
     } else {
-      // 2. 순화문 표시 상태로 복원
       commentSpan.textContent = displayText;
       toggleBtn.innerText = "원문 보기";
       toggleBtn.title = "순화 전 원래 댓글 보기";

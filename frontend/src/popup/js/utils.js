@@ -3,14 +3,7 @@ import "toastify-js/src/toastify.css";
 
 // 모드(일반/클린) 스타일 업데이트
 export function updateModeUI(isCleanMode, DOM) {
-  const {
-    modeGeneralLabel,
-    modeCleanLabel,
-    filterSettings,
-    cleanModePrompt,
-    statisticsCard,
-    personalSettings,
-  } = DOM;
+  const { modeGeneralLabel, modeCleanLabel, filterSettings, cleanModePrompt, statisticsCard, personalSettings } = DOM;
 
   const setDisplay = (element, value) => {
     if (element) element.style.display = value;
@@ -70,10 +63,11 @@ export function showToast(message) {
       background: "linear-gradient(to right, #ff5f6d, #ffc371)",
       borderRadius: "10px",
 
-      width: "auto",
-      maxWidth: "70vw",
+      maxWidth: "280px",
       display: "inline-block",
-      whiteSpace: "nowrap",
+      whiteSpace: "normal",
+      wordBreak: "keep-all",
+      width: "max-content",
 
       textAlign: "center",
       padding: "10px 20px",
