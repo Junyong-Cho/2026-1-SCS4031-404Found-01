@@ -22,7 +22,7 @@ insert into tags (tag) select unnest(@Tags) on conflict (tag) do update set coun
 insert into feedback_tag select @Id, unnest(@Tags);
 ";
     const string QUERY_TAG_STATIC = "select * from tags";
-    const string QUERY_FEEDBACKS = "select * from user_feedbacks";
+    const string QUERY_FEEDBACKS = "select * from user_feedback";
     const string QUERY_TAGS = "select tag from feedback_tag where feedback_id=@Id";
     const string QUERY_STATUS_STATIC = "select status, count(*) as count from user_feedback group by status";
 
