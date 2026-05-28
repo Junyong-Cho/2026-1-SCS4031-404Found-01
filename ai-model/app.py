@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 import uvicorn
 from pydantic import BaseModel, Field
-from main import refine_comment, ToxicClassificationError
+
+from main import refine_comment
+from models.toxic_classifier import ToxicClassificationError
 
 class ReqComment(BaseModel) :
     id : str
@@ -36,7 +38,7 @@ def index_page() :
     return 'index page'
 
 @app.post('/request', response_model = ResponseCommentsDto)
-def cleaing_comment(dto : RequestCommentsDto) :
+async def cleaing_comment(dto : RequestCommentsDto) :
     print('일단 요청 도착')
 
     total = len(dto.comments)
@@ -48,7 +50,7 @@ def cleaing_comment(dto : RequestCommentsDto) :
         res = ResComment(id=comment.id, originalText=comment.text)
 
         try:
-            refined = refine_comment(comment.text)
+            refined = await refine_comment(comment.text)
 
             is_toxic = refined["toxic_result"]["is_toxic"]
 
@@ -81,16 +83,18 @@ def cleaing_comment(dto : RequestCommentsDto) :
 
         results[i] = res
 
+    return ResponseCommentsDto(results=results, stats=stat)
+
 
 # 비동기 호출 용 / 댓글 1개 즉시 return 하는 구조
 
-@app.post('/request-one')
-def cleaning_one_comment(comment: ReqComment):
+@app.post('/request-one', response_model=ResComment)
+async def cleaning_one_comment(comment: ReqComment):
 
     res = ResComment(id=comment.id, originalText=comment.text)
 
     try:
-        refined = refine_comment(comment.text)
+        refined = await refine_comment(comment.text)
 
         is_toxic = refined["toxic_result"]["is_toxic"]
 
@@ -117,9 +121,6 @@ def cleaning_one_comment(comment: ReqComment):
         print("원문 " + comment.text)
         print("에러 " + str(e))
 
-        return res
-    
-    
-    return ResponseCommentsDto(results = results, stats = stat)
+    return res
 
 uvicorn.run(app = app, host='0.0.0.0', port=8080)
