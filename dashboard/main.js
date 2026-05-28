@@ -77,6 +77,12 @@ async function fetchAllDashboardData() {
     }
 
     // 2. 글로벌 변수에 데이터 매핑 및 가공
+    const statusMap = {
+      unverified: "미확인",
+      confirmed: "확인완료",
+      rejected: "반려",
+    };
+
     serverFeedbackList = rawFeedbacks.map((item) => ({
       id: item.id,
       createdAt: item.createdAt,
@@ -85,7 +91,7 @@ async function fetchAllDashboardData() {
       cleanedText: item.convertedText || "",
       tags: item.tags || [],
       reason: item.feedback || "",
-      status: item.status || "미확인",
+      status: statusMap[item.status] || "미확인",
     }));
 
     const tagColors = {
@@ -195,7 +201,9 @@ function render() {
     const matchStatus = currentStatusFilter === "전체" || item.status === currentStatusFilter;
     const matchTag = currentTagFilter === "전체" || item.tags.includes(currentTagFilter);
     const matchSearch =
-      item.originalText.toLowerCase().includes(searchKeyword) || item.reason.toLowerCase().includes(searchKeyword);
+      item.originalText.toLowerCase().includes(searchKeyword) ||
+      item.cleanedText.toLowerCase().includes(searchKeyword) ||
+      item.reason.toLowerCase().includes(searchKeyword);
     return matchDate && matchStatus && matchTag && matchSearch;
   });
 
