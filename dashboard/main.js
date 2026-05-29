@@ -282,13 +282,28 @@ window.movePage = function (page) {
 /**
  * 상태 업데이트 전송 연동 단치
  */
-window.changeStatus = function (id, newStatus) {
+window.changeStatus = async function (id, newStatus) {
   const item = serverFeedbackList.find((f) => String(f.id) === String(id));
   if (item) {
     item.status = newStatus;
     updateSummaryCounters();
     render();
     console.log(`[댓글세탁소] ID: ${id} 피드백 상태가 '${newStatus}'(으)로 로컬 업데이트되었습니다.`);
+  }
+
+  try {
+    const res = await fetch(`${BASE_URL}/report/verifying/${id}`, {
+      method: "GET",
+    });
+    if (res.ok) {
+      console.log(`[댓글세탁소] ✅ 서버 연동 성공 — ID: ${id}, Status: ${res.status}`);
+    } else {
+      const errBody = await res.text().catch(() => "(바디 없음)");
+      console.warn(`[댓글세탁소] ⚠️ 서버 연동 실패 — ID: ${id}, Status: ${res.status} ${res.statusText}`);
+      console.warn(`[댓글세탁소] 서버 응답 바디:`, errBody);
+    }
+  } catch (e) {
+    console.error(`[댓글세탁소] ❌ 서버 연동 오류 — ID: ${id}, Error: ${e.message}`);
   }
 };
 
