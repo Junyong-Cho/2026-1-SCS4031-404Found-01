@@ -62,10 +62,11 @@ body {
 .main-content {
   flex: 1;
   padding: 32px;
-  overflow-y: auto;
+  overflow-y: hidden;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  height: 100%;
 }
 
 .main-header {
@@ -78,11 +79,6 @@ body {
   margin: 0 0 6px 0;
   font-size: 22px;
   font-weight: 700;
-}
-.main-header p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
 }
 
 .date-picker-zone {
@@ -179,20 +175,28 @@ body {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  overflow: hidden;
+
   flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
 }
 .feedback-table {
   width: 100%;
+  min-width: 900px;
   border-collapse: collapse;
   text-align: left;
   font-size: 13px;
+  white-space: nowrap;
 }
 .feedback-table th {
   background-color: var(--bg-main);
   padding: 14px 16px;
   font-weight: 600;
   border-bottom: 1px solid var(--border-color);
+
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 .feedback-table td {
   padding: 14px 16px;
@@ -205,12 +209,14 @@ body {
   font-size: 12px;
   width: 130px;
 }
-.text-col {
+.text-col,
+.reason-col {
   font-weight: 500;
-  max-width: 150px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: 180px;
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.4;
+  padding: 4px 0;
 }
 .reason-col {
   color: var(--text-main);
@@ -438,4 +444,47 @@ body {
 .tag-list li strong {
   color: var(--text-main);
   font-weight: 600;
+}
+
+.video-link-btn {
+  text-decoration: none;
+}
+
+@media (max-width: 768px) {
+  .dashboard-wrapper {
+    flex-direction: column;
+    height: auto;
+    overflow: auto;
+  }
+
+  .main-content {
+    overflow-y: visible;
+    height: auto;
+  }
+
+  .right-panel {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .main-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .filter-control-line {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .search-sort-group {
+    width: 100%;
+  }
+
+  .search-box input {
+    width: 100%;
+  }
 }

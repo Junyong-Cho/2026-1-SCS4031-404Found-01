@@ -77,14 +77,21 @@ async function fetchAllDashboardData() {
     }
 
     // 2. 글로벌 변수에 데이터 매핑 및 가공
+    const statusMap = {
+      unverified: "미확인",
+      confirmed: "확인완료",
+      rejected: "반려",
+    };
+
     serverFeedbackList = rawFeedbacks.map((item) => ({
       id: item.id,
       createdAt: item.createdAt,
+      videoUrl: item.videoUrl || "",
       originalText: item.plainText || "",
       cleanedText: item.convertedText || "",
       tags: item.tags || [],
       reason: item.feedback || "",
-      status: item.status || "미확인",
+      status: statusMap[item.status] || "미확인",
     }));
 
     const tagColors = {
@@ -194,7 +201,9 @@ function render() {
     const matchStatus = currentStatusFilter === "전체" || item.status === currentStatusFilter;
     const matchTag = currentTagFilter === "전체" || item.tags.includes(currentTagFilter);
     const matchSearch =
-      item.originalText.toLowerCase().includes(searchKeyword) || item.reason.toLowerCase().includes(searchKeyword);
+      item.originalText.toLowerCase().includes(searchKeyword) ||
+      item.cleanedText.toLowerCase().includes(searchKeyword) ||
+      item.reason.toLowerCase().includes(searchKeyword);
     return matchDate && matchStatus && matchTag && matchSearch;
   });
 
@@ -212,36 +221,44 @@ function render() {
   if (currentPage > totalPages) currentPage = totalPages;
 
   const startIdx = (currentPage - 1) * pageSize;
-  const pagedItems = filtered.slice(startIdx, startIdx + pageSize);
 
   // 4. DOM 바인딩 및 그리기
+  const pagedItems = filtered.slice(startIdx, startIdx + pageSize);
+
   if (pagedItems.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:40px; color:gray;">조건에 부합하는 피드백 내역이 없습니다.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:40px; color:gray;">조건에 부합하는 피드백 내역이 없습니다.</td></tr>`;
   } else {
     tbody.innerHTML = pagedItems
-      .map((item) => {
+      .map((item, index) => {
+        // 🌟 여기에 index 추가!
         const tagsHtml = item.tags.map((t) => `<span class="table-tag">${t}</span>`).join(" ");
         let statusClass = "status-unverified";
         if (item.status === "확인완료") statusClass = "status-verified";
         if (item.status === "반려") statusClass = "status-rejected";
 
+        const videoLinkHtml = item.videoUrl
+          ? `<a href="${item.videoUrl}" target="_blank" rel="noopener noreferrer" class="video-link-btn" title="해당 영상으로 이동">🔗</a>`
+          : `<span style="color:var(--text-muted); font-size:11px;">없음</span>`;
+        const displayNo = startIdx + index + 1;
+
         return `
-        <tr>
-          <td>${item.id}</td>
-          <td class="time-col">${item.createdAt}</td>
-          <td class="text-col" title="${item.originalText}">${item.originalText}</td>
-          <td class="text-col" title="${item.cleanedText}">${item.cleanedText}</td>
-          <td><div class="tag-flex">${tagsHtml}</div></td>
-          <td class="reason-col" title="${item.reason}">${item.reason}</td>
-          <td>
-            <select class="status-dropdown ${statusClass}" onchange="changeStatus('${item.id}', this.value)">
-              <option value="미확인" ${item.status === "미확인" ? "selected" : ""}>미확인</option>
-              <option value="확인완료" ${item.status === "확인완료" ? "selected" : ""}>확인완료</option>
-              <option value="반려" ${item.status === "반려" ? "selected" : ""}>반려</option>
-            </select>
-          </td>
-        </tr>
-      `;
+      <tr>
+        <td>${displayNo}</td> 
+        <td class="time-col">${formatDateTime(item.createdAt)}</td>
+        <td>${videoLinkHtml}</td> 
+        <td class="text-col" title="${item.originalText}">${item.originalText}</td>
+        <td class="text-col" title="${item.cleanedText}">${item.cleanedText}</td>
+        <td><div class="tag-flex">${tagsHtml}</div></td>
+        <td class="reason-col" title="${item.reason}">${item.reason}</td>
+        <td>
+          <select class="status-dropdown ${statusClass}" onchange="changeStatus('${item.id}', this.value)">
+            <option value="미확인" ${item.status === "미확인" ? "selected" : ""}>미확인</option>
+            <option value="확인완료" ${item.status === "확인완료" ? "selected" : ""}>확인완료</option>
+            <option value="반려" ${item.status === "반려" ? "selected" : ""}>반려</option>
+          </select>
+        </td>
+      </tr>
+    `;
       })
       .join("");
   }
