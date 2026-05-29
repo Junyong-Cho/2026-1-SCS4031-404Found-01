@@ -76,6 +76,12 @@ constraint ref_feedback_id foreign key (feedback_id) references user_feedback(id
 constraint ref_tag foreign key (tag) references tags(tag),
 constraint p_key_feedback_tag primary key (feedback_id, tag)
 );
+
+create table if not exists cached_comments(
+plain_text text primary key,
+refined_text text,
+is_toxic boolean not null
+);
 ";
         await dbCon.ExecuteAsync(query);
     }
