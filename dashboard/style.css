@@ -10,8 +10,6 @@
   --purple-bg: #f3e5f5;
   --green-tag: #26a69a;
   --green-bg: #e0f2f1;
-  --red-tag: #ef5350;
-  --red-bg: #ffebee;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -24,7 +22,6 @@
     --point-bg: #2c1e1a;
     --purple-bg: #2a1b3d;
     --green-bg: #142d29;
-    --red-bg: #3c1c1c;
   }
 }
 
@@ -175,7 +172,6 @@ body {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-
   flex: 1;
   overflow-y: auto;
   overflow-x: auto;
@@ -193,7 +189,6 @@ body {
   padding: 14px 16px;
   font-weight: 600;
   border-bottom: 1px solid var(--border-color);
-
   position: sticky;
   top: 0;
   z-index: 10;
@@ -305,10 +300,6 @@ body {
   background-color: var(--green-bg);
   color: var(--green-tag);
 }
-.status-rejected {
-  background-color: var(--red-bg);
-  color: var(--red-tag);
-}
 
 .right-panel {
   width: 360px;
@@ -330,12 +321,12 @@ body {
   letter-spacing: -0.3px;
 }
 
+/* 3개 요약 카드에 맞춘 Grid 레이아웃 최적화 */
 .summary-card {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-
 .summary-item {
   background: linear-gradient(145deg, var(--bg-card), var(--bg-main));
   border: 1px solid var(--border-color);
@@ -349,7 +340,9 @@ body {
   gap: 6px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.01);
 }
-
+.summary-item.total {
+  grid-column: 1 / -1; /* 전체 접수 카드는 상단 가로 전체 차지 */
+}
 .summary-item strong {
   font-size: 20px;
   font-weight: 700;
@@ -360,9 +353,6 @@ body {
 }
 .summary-item.verified strong {
   color: var(--green-tag);
-}
-.summary-item.rejected strong {
-  color: var(--red-tag);
 }
 
 .mock-chart {
@@ -456,34 +446,28 @@ body {
     height: auto;
     overflow: auto;
   }
-
   .main-content {
     overflow-y: visible;
     height: auto;
   }
-
   .right-panel {
     width: 100%;
     border-left: none;
     border-top: 1px solid var(--border-color);
   }
-
   .main-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
-
   .filter-control-line {
     flex-direction: column;
     align-items: flex-start;
     gap: 10px;
   }
-
   .search-sort-group {
     width: 100%;
   }
-
   .search-box input {
     width: 100%;
   }
