@@ -79,8 +79,7 @@ async function fetchAllDashboardData() {
     // 2. 글로벌 변수에 데이터 매핑 및 가공
     const statusMap = {
       unverified: "미확인",
-      confirmed: "확인완료",
-      rejected: "반려",
+      verified: "확인완료",
     };
 
     serverFeedbackList = rawFeedbacks.map((item) => ({
@@ -132,15 +131,12 @@ function updateSummaryCounters() {
   const total = serverFeedbackList.length;
   const unverified = serverFeedbackList.filter((i) => i.status === "미확인").length;
   const verified = serverFeedbackList.filter((i) => i.status === "확인완료").length;
-  const rejected = serverFeedbackList.filter((i) => i.status === "반려").length;
 
   document.getElementById("total-count").textContent = total + "건";
   document.getElementById("unverified-count").textContent = unverified + "건";
   document.getElementById("verified-count").textContent = verified + "건";
-  document.getElementById("rejected-count").textContent = rejected + "건";
   document.getElementById("chart-total").textContent = total;
 
-  // conic-gradient 시각화 연산
   const safeTotal = total || 1;
   let accumulatedPercent = 0;
 
@@ -230,11 +226,9 @@ function render() {
   } else {
     tbody.innerHTML = pagedItems
       .map((item, index) => {
-        // 🌟 여기에 index 추가!
         const tagsHtml = item.tags.map((t) => `<span class="table-tag">${t}</span>`).join(" ");
         let statusClass = "status-unverified";
         if (item.status === "확인완료") statusClass = "status-verified";
-        if (item.status === "반려") statusClass = "status-rejected";
 
         const videoLinkHtml = item.videoUrl
           ? `<a href="${item.videoUrl}" target="_blank" rel="noopener noreferrer" class="video-link-btn" title="해당 영상으로 이동">🔗</a>`
@@ -254,7 +248,6 @@ function render() {
           <select class="status-dropdown ${statusClass}" onchange="changeStatus('${item.id}', this.value)">
             <option value="미확인" ${item.status === "미확인" ? "selected" : ""}>미확인</option>
             <option value="확인완료" ${item.status === "확인완료" ? "selected" : ""}>확인완료</option>
-            <option value="반려" ${item.status === "반려" ? "selected" : ""}>반려</option>
           </select>
         </td>
       </tr>
@@ -289,13 +282,28 @@ window.movePage = function (page) {
 /**
  * 상태 업데이트 전송 연동 단치
  */
-window.changeStatus = function (id, newStatus) {
+window.changeStatus = async function (id, newStatus) {
   const item = serverFeedbackList.find((f) => String(f.id) === String(id));
   if (item) {
     item.status = newStatus;
     updateSummaryCounters();
     render();
     console.log(`[댓글세탁소] ID: ${id} 피드백 상태가 '${newStatus}'(으)로 로컬 업데이트되었습니다.`);
+  }
+
+  try {
+    const res = await fetch(`${BASE_URL}/report/verifying/${id}`, {
+      method: "GET",
+    });
+    if (res.ok) {
+      console.log(`[댓글세탁소] ✅ 서버 연동 성공 — ID: ${id}, Status: ${res.status}`);
+    } else {
+      const errBody = await res.text().catch(() => "(바디 없음)");
+      console.warn(`[댓글세탁소] ⚠️ 서버 연동 실패 — ID: ${id}, Status: ${res.status} ${res.statusText}`);
+      console.warn(`[댓글세탁소] 서버 응답 바디:`, errBody);
+    }
+  } catch (e) {
+    console.error(`[댓글세탁소] ❌ 서버 연동 오류 — ID: ${id}, Error: ${e.message}`);
   }
 };
 
