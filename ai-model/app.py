@@ -20,7 +20,8 @@ class ResComment(BaseModel) :
     toxicTypes: list[str] = Field(default_factory=list) # 평가/디버깅용: ["Politics", "Origin", "Profanity"] 형태
     convertedText : str | None = None
     # 평가/디버깅용
-    processType: str = "" # dictionary_replacement / llm_refinement / pass 구분용 필드
+    processType: str = "" # dictionary_replacement / simple_profanity_llm_replacement/ llm_refinement / safe_masking / pass 구분용 필드
+    maskReason: str = "" # safe_masking 전용: low_context / unsafe_to_preserve
     originalText: str | None = None
 
 class Stat(BaseModel) :
@@ -61,6 +62,7 @@ async def cleaing_comment(dto : RequestCommentsDto) :
             res.toxicType = "|".join(labels)
             res.toxicTypes = labels
             res.processType = process_type
+            res.maskReason = refined.get("mask_reason", "")
 
             if is_toxic:
                 stat.toxicCount += 1
@@ -105,6 +107,7 @@ async def cleaning_one_comment(comment: ReqComment):
         res.toxicType = "|".join(labels)
         res.toxicTypes = labels
         res.processType = process_type
+        res.maskReason = refined.get("mask_reason", "")
 
         if is_toxic:
             res.convertedText = refined["refined_text"]
