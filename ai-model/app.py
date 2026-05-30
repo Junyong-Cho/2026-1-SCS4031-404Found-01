@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 import uvicorn
 from pydantic import BaseModel, Field
-from main import refine_comment#, ToxicClassificationError
+
+from main import refine_comment
+from models.toxic_classifier import ToxicClassificationError
 
 class RequestCommentDto(BaseModel) :
     id : str
@@ -14,15 +16,9 @@ class ResponseCommentDto(BaseModel) :
     # toxicTypes: list[str] = Field(default_factory=list) # 평가/디버깅용: ["Politics", "Origin", "Profanity"] 형태
     convertedText : str | None = None
     # 평가/디버깅용
-    # processType: str = "" # dictionary_replacement / llm_refinement / pass 구분용 필드
+    # processType: str = "" # dictionary_replacement / simple_profanity_llm_replacement/ llm_refinement / safe_masking / pass 구분용 필드
+    # maskReason: str = "" # safe_masking 전용: low_context / unsafe_to_preserve
     # originalText: str | None = None
-
-app = FastAPI()
-
-@app.get('/')
-def index_page() :
-    return 'index page'
-
 @app.post('/request', response_model = ResponseCommentDto)
 async def cleaning_comment(dto : RequestCommentDto) :
     print('일단 요청 도착')
@@ -43,6 +39,8 @@ async def cleaning_comment(dto : RequestCommentDto) :
         return None
         
 
+
+    return ResponseCommentsDto(results=results, stats=stat)
 
 
 # 비동기 호출 용 / 댓글 1개 즉시 return 하는 구조
