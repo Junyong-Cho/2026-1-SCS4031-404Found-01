@@ -105,8 +105,6 @@ public class AuthController : ControllerBase
             ForbidenWords = keywords.ToList()
         };
 
-        Console.WriteLine($"토큰 : {tokenString}");
-
         return Results.Ok(responseToken);
     }
 

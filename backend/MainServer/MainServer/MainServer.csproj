@@ -8,6 +8,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Dtos\FromServer\NewFolder\**" />
+    <Content Remove="Dtos\FromServer\NewFolder\**" />
+    <EmbeddedResource Remove="Dtos\FromServer\NewFolder\**" />
+    <None Remove="Dtos\FromServer\NewFolder\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.72" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.5" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
