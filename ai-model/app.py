@@ -19,6 +19,9 @@ class ResponseCommentDto(BaseModel) :
     # processType: str = "" # dictionary_replacement / simple_profanity_llm_replacement/ llm_refinement / safe_masking / pass 구분용 필드
     # maskReason: str = "" # safe_masking 전용: low_context / unsafe_to_preserve
     # originalText: str | None = None
+
+app = FastAPI()
+
 @app.post('/request', response_model = ResponseCommentDto)
 async def cleaning_comment(dto : RequestCommentDto) :
     print('일단 요청 도착')
@@ -36,11 +39,18 @@ async def cleaning_comment(dto : RequestCommentDto) :
 
         return response
     except Exception as e:
-        return None
+        print("에러:", str(e))
+        
+        return ResponseCommentDto(
+            id=dto.id,
+            isToxic=True,
+            convertedText="댓글 처리 중 오류가 발생했습니다."
+        )
+
         
 
 
-    return ResponseCommentsDto(results=results, stats=stat)
+    # return ResponseCommentsDto(results=results, stats=stat)
 
 
 # 비동기 호출 용 / 댓글 1개 즉시 return 하는 구조
