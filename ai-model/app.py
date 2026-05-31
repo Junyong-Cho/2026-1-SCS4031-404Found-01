@@ -25,7 +25,7 @@ def index_page() :
 
 @app.post('/request', response_model = ResponseCommentDto)
 async def cleaning_comment(dto : RequestCommentDto) :
-    print('일단 요청 도착')
+    print(f'일단 요청 도착 : {dto.text}')
 
     try :
         refined = await refine_comment(dto.text)
