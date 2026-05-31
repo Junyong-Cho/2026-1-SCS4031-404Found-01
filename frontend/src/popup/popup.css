@@ -338,15 +338,18 @@ input:checked + .slider:before {
   margin-bottom: 8px;
 }
 .section-header h4 {
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
 }
 
 .keyword-guide {
-  font-size: 11px;
-  color: #888888;
-  line-height: 1.5;
   margin-bottom: 8px;
   padding-left: 2px;
+
+  font-size: 10px;
+  color: var(--text-sub);
+  line-height: 1.3;
 }
 
 .keyword-input-group {
@@ -400,4 +403,154 @@ input:checked + .slider:before {
   cursor: pointer;
   font-size: 10px;
   padding: 0;
+}
+
+/* =====================================================
+다크모드
+   ===================================================== */
+
+@media (prefers-color-scheme: dark) {
+  /* 색상 변수 재정의
+     배경을 #111 → #1c1c1e 로 올려서 너무 까매 보이는 문제 해소 */
+  :root {
+    --bg-beige: #1c1c1e;
+    --card-bg: #2c2c2e;
+    --text-main: #f0f0f0;
+    --text-sub: #ababab;
+    --indicator: #e0b87a;
+  }
+
+  body {
+    background-color: #1c1c1e;
+  }
+
+  /* ── 토글 네비게이션 ── */
+  .toggle-shell {
+    background: #2c2c2e;
+    border-bottom-color: rgba(255, 138, 101, 0.15);
+  }
+  .mode-tab {
+    color: #777;
+  }
+  .mode-tab.active {
+    color: var(--indicator);
+  }
+  .mode-track {
+    background: #3a3a3c;
+  }
+
+  /* ── 통계 카드 ── */
+  .statistics-card {
+    background: #2c2c2e;
+    border-color: rgba(255, 255, 255, 0.07);
+  }
+  .stats-info h4 {
+    color: #f0f0f0;
+  }
+  .stats-info p {
+    color: #ababab;
+  }
+
+  /* ── 파이 차트 ── */
+  .pie-chart {
+    color: #f0f0f0;
+  }
+  .pie-chart::before {
+    background: #2c2c2e;
+  }
+
+  /* ── 필터 아이템 ── */
+  .filter-item {
+    background: #2c2c2e;
+    border-color: #3a3a3c;
+  }
+  .step-label {
+    color: #f0f0f0;
+  }
+  .step-description {
+    color: #ababab;
+  }
+
+  /* ── 스위치 슬라이더 (off) ── */
+  .slider {
+    background-color: #48484a;
+  }
+  .slider:before {
+    background-color: #d0d0d0;
+  }
+  input:checked + .slider {
+    background-color: var(--primary-orange);
+  }
+  input:checked + .slider:before {
+    background-color: #fff;
+  }
+
+  /* ── 개인화 (키워드) ── */
+  .personal-settings {
+    background: #2c2c2e;
+  }
+  .section-header h4 {
+    color: #f0f0f0;
+  }
+  .keyword-guide {
+    color: #ababab;
+  }
+  #keyword-input {
+    background: #3a3a3c;
+    border-color: #48484a;
+    color: #f0f0f0;
+  }
+  #keyword-input::placeholder {
+    color: #6e6e73;
+  }
+  #add-keyword {
+    background: var(--primary-orange);
+    color: #fff;
+  }
+
+  /* ── 키워드 태그 ── */
+  .tag {
+    background: #3a2218;
+    color: #ff9a7a;
+  }
+  .tag button {
+    color: #ff9a7a;
+  }
+
+  /* ── 클린 모드 프롬프트 ── */
+  .prompt-card {
+    background: #2c2c2e;
+    border-color: rgba(255, 255, 255, 0.07);
+  }
+  .prompt-card p {
+    color: #c0c0c0;
+  }
+
+  /* ── 유저 바 ── */
+  #user-email {
+    color: #ababab;
+  }
+
+  /* ── 로그인/로그아웃 버튼 hover ── */
+  #btn-logout:hover,
+  #btn-login:hover {
+    background-color: rgba(255, 138, 101, 0.15);
+  }
+
+  /* ── highlight 텍스트 */
+  .highlight {
+    color: #ff9a7a;
+  }
+
+  /* ── 스크롤바 ── */
+  ::-webkit-scrollbar {
+    width: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #1c1c1e;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #48484a;
+    border-radius: 2px;
+  }
 }
