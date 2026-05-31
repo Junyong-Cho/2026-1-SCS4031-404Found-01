@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from models.label_classifier import LabelClassifier
-from models.refiner import Refiner
+from models.refiner_v2 import Refiner
 from models.toxic_classifier import ToxicClassifier
 from models.replacer import (
     load_bad_words,
@@ -105,7 +105,8 @@ async def refine_comment(comment: str):
     elif len(labels) > 0:
 
         final_result = await refiner.refine(
-            replaced_comment
+            replaced_comment,
+            labels
         )
 
         final_result["original_text"] = comment
@@ -120,7 +121,8 @@ async def refine_comment(comment: str):
     else:
 
         final_result = await refiner.refine(
-            replaced_comment
+            replaced_comment,
+            labels
         )
 
         final_result["original_text"] = comment
@@ -152,17 +154,27 @@ async def main():
 
     # 테스트용
     test_comments = [
-        "좌좀 홍어들이 일베보다 더 극혐이다",
-        "와 이거 완전 재앙이네. 깨끗한 나라 만든다면서 왜 이런 사건이 터지냐??",
-        "몬생긴 여자인간들은 찌그러져있어라 확그냥 막그냥",
-        "오면 화염병 던진다 돼지새키야",
-        "수꼴틀딱시키들이 다 디져야 나라가 똑바로 될것같다..답이 없는 종자들ㅠ",
-        "ㅇㅇ? 양놈이건 깜씨건 뭔 아방가르드하네",
-        "OOO천지 개독교 새끼들아 다 착해져라!",
-        "다들 오지랖 좀...되게 할 짓 없어보여요",
-        "연기못하는 방구쟁이년",
-        "뚱보끼린 뭔가 잘맞는게 있나보네",
-        "씨발",
+        #"그래봤자 늙은 할머니 짱깨",
+        "너네나라가! 탄김치야!",
+        # "개독과 미친x 목둥이가 답",
+        # "돼지가 삶은 소대가리가 웃겠다며 빠져라 하지 않았나??돼지가 노할텐데~",
+        # "좌좀 홍어들이 일베보다 더 극혐이다",
+        # "ㅋㅋ 떡잎부터 한남새기들 다 거세시켜라",
+        # "그러니 짱개헥히라고 부르는거여 정신뱅자 멸족들아",
+        # "저 코리안 황인종 화상들~~ 니미 뭐하러 백인들 성지에 가서 빙신취급받고 다니냐??",
+        # "열폭 돼지녀들 출동!!!",
+        # "하여튼 방구석 아낙들 일이란 왜 이리도 한심하기 짝이 없을까? ㅉㅉ 줌탱들 가십거리하나 늘었다고 신났네 남편애들저녁은 하고 댓글달고 있는건지",
+        # "피해자들 저년 얼굴보면 무슨생각들까",
+        # "와 이거 완전 재앙이네. 깨끗한 나라 만든다면서 왜 이런 사건이 터지냐??",
+        # "몬생긴 여자인간들은 찌그러져있어라 확그냥 막그냥",
+        # "오면 화염병 던진다 돼지새키야",
+        # "수꼴틀딱시키들이 다 디져야 나라가 똑바로 될것같다..답이 없는 종자들ㅠ",
+        # "ㅇㅇ? 양놈이건 깜씨건 뭔 아방가르드하네",
+        # "OOO천지 개독교 새끼들아 다 착해져라!",
+        # "다들 오지랖 좀...되게 할 짓 없어보여요",
+        # "연기못하는 방구쟁이년",
+        # "뚱보끼린 뭔가 잘맞는게 있나보네",
+        # "씨발",
     ]
 
     results = await asyncio.gather(
