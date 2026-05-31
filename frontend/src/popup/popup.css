@@ -76,14 +76,31 @@ body {
   letter-spacing: -0.01em;
 }
 
-#btn-logout {
+#btn-logout,
+#btn-login {
   background: none;
   border: none;
   font-size: 10px;
   color: var(--primary-orange);
   cursor: pointer;
   font-weight: 600;
-  padding: 2px 5px;
+  padding: 3px 6px;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+#btn-logout:hover,
+#btn-login:hover {
+  background-color: rgba(255, 138, 101, 0.12);
+}
+
+#btn-logout:active,
+#btn-login:active {
+  background-color: rgba(255, 138, 101, 0.22);
+}
+
+#btn-login {
+  margin-left: auto;
 }
 
 /* --- Top Toggle Navigation --- */

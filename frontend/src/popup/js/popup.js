@@ -16,6 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const addKeywordBtn = document.getElementById("add-keyword"); // 키워드 추가 버튼
   const keywordTagsContainer = document.getElementById("keyword-tags"); // 추가된 키워드 태그가 담길 컨테이너
   const logoutBtn = document.getElementById("btn-logout"); // 로그아웃 버튼
+  const loginBtn = document.getElementById("btn-login"); // 로그인 버튼
   const userEmailElem = document.getElementById("user-email"); // 유저 이메일 표시 영역
   const userInfoBar = document.getElementById("user-info-bar"); // 유저 정보 표시 바
 
@@ -29,6 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
     addKeywordBtn,
     keywordTagsContainer,
     logoutBtn,
+    loginBtn,
     userEmailElem,
     userInfoBar,
     filterSettings: document.querySelector(".filter-settings"),
@@ -75,11 +77,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // (3) 로그인 상태 UI 처리
     if (res.isLoggedIn) {
-      userInfoBar.style.display = "flex";
+      userEmailElem.style.display = "inline";
       userEmailElem.innerText = res.userEmail || "";
+      logoutBtn.style.display = "inline";
+      loginBtn.style.display = "none";
+
       keywordInput.placeholder = "차단할 단어 입력";
     } else {
-      userInfoBar.style.display = "none";
+      userEmailElem.style.display = "none";
+      logoutBtn.style.display = "none";
+      loginBtn.style.display = "inline";
+
       keywordInput.placeholder = "클릭하여 로그인 후 이용";
     }
 
@@ -101,7 +109,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function handleLoginRequired(e) {
     e.preventDefault();
     if (confirm("맞춤 금지어 설정은 로그인이 필요합니다.\n구글 로그인을 진행하시겠습니까?")) {
-      chrome.runtime.sendMessage({ action: "login" }, () => window.close());
+      chrome.runtime.sendMessage({ action: "login" });
     }
   }
 
@@ -210,6 +218,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  /** 구글 로그인 버튼 클릭 핸들러 */
+  loginBtn.addEventListener("click", () => {
+    if (confirm("구글 로그인을 진행하시겠습니까?")) {
+      chrome.runtime.sendMessage({ action: "login" });
+    }
+  });
+
   // --- 4. 사용자 설정 변경 감지 및 저장 ---
 
   /** 정화 단계 라디오 버튼 변경 시 저장 */
@@ -271,18 +286,18 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   chrome.runtime.onMessage.addListener((msg) => {
-    // 토큰 만료 또는 로그인 취소 신호를 받았을 때 처리
+    // 1. 세션 만료 알림 또는 구글 로그인 창에서 취소(X)를 눌렀을 때 처리
     if (msg.action === "loginCancelled") {
-      showToast("다시 로그인해주세요.");
-
-      // 비로그인 UI로 전환
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+      showToast("로그인이 취소되었습니다. 다시 시도해 주세요.");
     }
 
-    // 로그인 완료 시 팝업 갱신
-    if (msg.action === "loginFinished") window.location.reload();
+    // 2. 로그인 최종 완료 신호를 받았을 때 처리
+    if (msg.action === "loginFinished") {
+      showToast("로그인 성공! 환영합니다.");
+      setTimeout(() => {
+        window.location.reload();
+      }, 800);
+    }
 
     /** [실시간 통계 업데이트] 백그라운드에서 전달받은 새로운 통계 수치를 UI에 반영 */
     if (msg.action === "UPDATE_STATS") {

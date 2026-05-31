@@ -10,6 +10,7 @@ const ENDPOINTS = {
   CLEANING: `${BASE_URL}/cleaning`,
   SIGNIN: `${BASE_URL}/auth/google-signin`,
   FORBID_BASE: `${BASE_URL}/forbid`,
+  REPORT: `${BASE_URL}/report`,
 };
 
 /**
@@ -94,7 +95,73 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     syncKeywordWithServer("DELETE", `delete/${encodeURIComponent(request.keyword)}`, sendResponse);
     return true;
   }
+
+  // 7. 피드백 전송 요청 처리 (채널 유실 완벽 방지 구조)
+  if (request.type === "SEND_FEEDBACK") {
+    processFeedbackSubmit(request.data)
+      .then((result) => {
+        sendResponse({ status: "success" });
+      })
+      .catch((err) => {
+        console.error("[댓글세탁소] 피드백 백그라운드 catch 진입:", err.message);
+
+        if (err.message.includes("401") || err.message.includes("UNAUTHORIZED")) {
+          console.warn("[댓글세탁소] 세션 만료 감지 ➔ 자동 로그아웃 및 스토리지 초기화를 시작합니다.");
+
+          handleTokenExpired();
+        }
+        sendResponse({ status: "error", error: err.message });
+      });
+
+    return true; // 비동기 채널 유지
+  }
 });
+/**
+ * 유저가 모달 창에 입력한 피드백 데이터 서버로 전송
+ */
+async function processFeedbackSubmit(clientData) {
+  try {
+    const { serverToken } = await chrome.storage.local.get("serverToken");
+
+    const headers = {
+      "Content-Type": "application/json",
+    };
+
+    if (serverToken) {
+      headers["Authorization"] = `Bearer ${serverToken}`;
+    }
+
+    const payload = {
+      id: clientData.id || null,
+      videoUrl: clientData.videoUrl || "",
+      plainText: clientData.plainText || "",
+      convertedText: clientData.convertedText || "",
+      feedback: clientData.reason || "",
+      tags: clientData.tags || [],
+    };
+
+    console.log("[댓글세탁소] 피드백 서버 전송 시작:", JSON.stringify(payload, null, 2));
+
+    const response = await fetch(ENDPOINTS.REPORT, {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(payload),
+    });
+
+    if (response.status === 401) {
+      throw new Error("ERROR_CODE_401_UNAUTHORIZED");
+    }
+    if (!response.ok) {
+      throw new Error(`피드백 서버 응답 에러: ${response.status}`);
+    }
+
+    console.log("[댓글세탁소] 피드백 서버 전송 완료");
+    return true;
+  } catch (error) {
+    console.error("피드백 전송 실패 내부 로그:", error);
+    throw error;
+  }
+}
 
 /**
  * 백엔드 서버로 금지어 동기화 API 호출 (패스 파라미터 방식 반영)
@@ -229,5 +296,6 @@ async function sendTokenToBackend(jwt) {
   } catch (error) {
     console.error("통신 흐름 실패:", error.message);
     chrome.storage.local.set({ isLoggedIn: false, userEmail: "" });
+    chrome.runtime.sendMessage({ action: "loginCancelled" });
   }
 }
