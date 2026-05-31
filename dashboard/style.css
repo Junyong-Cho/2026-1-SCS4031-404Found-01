@@ -12,19 +12,6 @@
   --green-bg: #e0f2f1;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-main: #121212;
-    --bg-card: #1e1e1e;
-    --border-color: #333333;
-    --text-main: #e0e0e0;
-    --text-muted: #a0a0a0;
-    --point-bg: #2c1e1a;
-    --purple-bg: #2a1b3d;
-    --green-bg: #142d29;
-  }
-}
-
 body {
   margin: 0;
   padding: 0;
@@ -341,7 +328,7 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.01);
 }
 .summary-item.total {
-  grid-column: 1 / -1; /* 전체 접수 카드는 상단 가로 전체 차지 */
+  grid-column: 1 / -1;
 }
 .summary-item strong {
   font-size: 20px;
@@ -440,35 +427,160 @@ body {
   text-decoration: none;
 }
 
-@media (max-width: 768px) {
-  .dashboard-wrapper {
-    flex-direction: column;
-    height: auto;
-    overflow: auto;
+/* =====================================================
+다크모드
+   ===================================================== */
+
+@media (prefers-color-scheme: dark) {
+  /* 색상 변수 재정의 */
+  :root {
+    --bg-main: #0f0f0f;
+    --bg-card: #1a1a1a;
+    --border-color: #2a2a2a;
+    --text-main: #e8e8e8;
+    --text-muted: #888888;
+    --point-bg: #2a1810;
+    --purple-bg: #1e1530;
+    --green-bg: #0e2420;
   }
-  .main-content {
-    overflow-y: visible;
-    height: auto;
+
+  /* ── 상단 바 ── */
+  .top-bar {
+    background-color: #141414;
+    border-bottom-color: #252525;
   }
-  .right-panel {
-    width: 100%;
-    border-left: none;
-    border-top: 1px solid var(--border-color);
+
+  /* ── 테이블 헤더 ── */
+  .feedback-table th {
+    background-color: #111111;
+    border-bottom-color: #2a2a2a;
   }
-  .main-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
+
+  .feedback-table td {
+    border-bottom-color: #222222;
   }
-  .filter-control-line {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
+
+  /* ── 테이블 컨테이너 ── */
+  .table-container {
+    background-color: #1a1a1a;
+    border-color: #2a2a2a;
   }
-  .search-sort-group {
-    width: 100%;
+
+  /* ── 탭 버튼 ── */
+  .tab-group .tab {
+    color: #666;
+  }
+  .tab-group .tab.active {
+    color: var(--point-orange);
+  }
+
+  /* ── 태그 필터 버튼 ── */
+  .tag-filter-btn {
+    background: #1e1e1e;
+    border-color: #333;
+    color: #bbb;
+  }
+  .tag-filter-btn:hover,
+  .tag-filter-btn.active {
+    background: var(--point-bg);
+    border-color: var(--point-orange);
+    color: var(--point-orange);
+  }
+
+  /* ── 검색 & 정렬 ── */
+  .search-box {
+    background: #1e1e1e;
+    border-color: #333;
   }
   .search-box input {
-    width: 100%;
+    color: #e0e0e0;
+    background: transparent;
+  }
+  .search-box input::placeholder {
+    color: #555;
+  }
+  .sort-select {
+    background: #1e1e1e;
+    border-color: #333;
+    color: #e0e0e0;
+  }
+
+  /* ── 날짜 인풋 ── */
+  .date-picker-zone input {
+    background: #1e1e1e;
+    border-color: #333;
+    color: #e0e0e0;
+    color-scheme: dark;
+  }
+
+  /* ── 페이지네이션 ── */
+  .page-arrow,
+  .page-num {
+    background: #1e1e1e;
+    border-color: #333;
+    color: #ccc;
+  }
+  .page-num.active {
+    background: var(--point-orange);
+    border-color: var(--point-orange);
+    color: #fff;
+  }
+  .page-size-selector select {
+    background: #1e1e1e;
+    border-color: #333;
+    color: #ccc;
+    color-scheme: dark;
+  }
+
+  /* ── 상태 드롭다운 ── */
+  .status-unverified {
+    background-color: var(--purple-bg);
+    color: #a78bda;
+  }
+  .status-verified {
+    background-color: var(--green-bg);
+    color: #4db6ac;
+  }
+
+  /* ── 우측 패널 ── */
+  .right-panel {
+    background-color: #141414;
+    border-left-color: #252525;
+  }
+
+  /* ── 요약 카드 ── */
+  .summary-item {
+    background: linear-gradient(145deg, #1e1e1e, #161616);
+    border-color: #2a2a2a;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  /* ── 차트 도넛 ── */
+  .chart-circle {
+    background: conic-gradient(#2a2a2a 0% 100%);
+  }
+  .chart-circle::after {
+    background-color: #141414;
+  }
+
+  /* ── 태그 리스트 ── */
+  .tag-list li {
+    border-bottom-color: #2a2a2a;
+  }
+
+  /* ── 스크롤바 ── */
+  .table-container::-webkit-scrollbar,
+  .tag-list-wrapper::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .table-container::-webkit-scrollbar-track,
+  .tag-list-wrapper::-webkit-scrollbar-track {
+    background: #1a1a1a;
+  }
+  .table-container::-webkit-scrollbar-thumb,
+  .tag-list-wrapper::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 3px;
   }
 }
