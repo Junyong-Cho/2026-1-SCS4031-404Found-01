@@ -27,7 +27,7 @@ classifier = LabelClassifier(
 
 refiner = Refiner(
     client=client,
-    model_name="gpt-4o-mini"
+    model_name="gpt-5.4-mini"
 )
 
 toxic_classifier = ToxicClassifier(
