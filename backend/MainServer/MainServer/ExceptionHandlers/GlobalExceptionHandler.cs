@@ -18,6 +18,8 @@ public class GlobalExceptionHandler : IExceptionHandler
     {
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
 
+        Console.WriteLine(exception.Message);
+
         await httpContext.Response.WriteAsJsonAsync(new
         {
             StatusCodes.Status500InternalServerError,
