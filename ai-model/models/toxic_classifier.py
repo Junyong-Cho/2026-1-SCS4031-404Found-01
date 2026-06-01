@@ -58,6 +58,16 @@ class ToxicClassifier:
 출력:
 {{"label": "non-toxic"}}
 
+예시 3
+댓글: "진짜 OO같은 사람이 있어야해, 이 시대엔 사기꾼들이 너무 많아"
+출력:
+{{"label": "non-toxic"}}
+
+예시 3
+댓글: "또 콘텐츠 담당관이냐고요!"
+출력:
+{{"label": "non-toxic"}}
+
 예시 4
 댓글: "이딴 걸 영상이라고 올렸냐?"
 출력:
@@ -70,6 +80,11 @@ class ToxicClassifier:
     
 예시 6
 댓글: "수준 진짜 처참하네 ㅋㅋ"
+출력:
+{{"label": "toxic"}}
+
+예시 7
+댓글: "너무 더럽다ㅜㅜ 토나올라한다"
 출력:
 {{"label": "toxic"}}
 
