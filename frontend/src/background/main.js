@@ -57,29 +57,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // 4. 통계 수치 업데이트 처리 (Content Script로부터 수신)
-  if (request.type === "UPDATE_LAUNDRY_STATS") {
-    const stats = request.stats;
+  // 4. 통계 수치 업데이트 처리 (ID 기반 중복 방지 우회 구조)
+  if (request.type === "ADD_LAUNDRY_STATS") {
+    const { lcId, isToxic } = request;
 
-    // 브라우저 권한이 확실한 백그라운드 컨텍스트에서 session 스토리지 제어
-    chrome.storage.session.get(["totalComments", "toxicComments"], (res) => {
-      const newTotal = (res.totalComments || 0) + (stats.totalScanned || 0);
-      const newToxic = (res.toxicComments || 0) + (stats.toxicCount || 0);
+    chrome.storage.session.get(["scannedIds", "toxicIds"], (res) => {
+      const safeRes = res || {};
+      const scannedIds = safeRes.scannedIds || [];
+      const toxicIds = safeRes.toxicIds || [];
 
-      chrome.storage.session.set({ totalComments: newTotal, toxicComments: newToxic }, () => {
-        chrome.runtime.sendMessage(
-          {
-            action: "UPDATE_STATS",
-            totalComments: newTotal,
-            toxicComments: newToxic,
-          },
-          () => {
-            const _ = chrome.runtime.lastError;
-          },
-        );
+      // 이미 통계에 반영된 댓글 ID라면 중복 처리 스킵
+      if (scannedIds.includes(lcId)) {
+        sendResponse({ status: "duplicated" });
+        return;
+      }
 
-        sendResponse({ status: "success" });
-      });
+      // 새로운 유니크 ID 배열에 등록
+      scannedIds.push(lcId);
+      if (isToxic) {
+        toxicIds.push(lcId);
+      }
+
+      const totalCount = scannedIds.length;
+      const toxicCount = toxicIds.length;
+
+      // 세션 스토리지에 배열과 카운트를 함께 저장
+      chrome.storage.session.set(
+        {
+          scannedIds: scannedIds,
+          toxicIds: toxicIds,
+          totalComments: totalCount,
+          toxicComments: toxicCount,
+        },
+        () => {
+          // 팝업 UI로 실시간 데이터 전송
+          chrome.runtime.sendMessage(
+            {
+              action: "UPDATE_STATS",
+              totalComments: totalCount,
+              toxicComments: toxicCount,
+            },
+            () => {
+              void chrome.runtime.lastError;
+            },
+          );
+
+          sendResponse({ status: "success", total: totalCount, toxic: toxicCount });
+        },
+      );
     });
     return true;
   }

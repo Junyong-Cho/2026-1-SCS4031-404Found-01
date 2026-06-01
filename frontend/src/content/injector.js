@@ -218,10 +218,7 @@ function sendNext() {
         if (response && response.id !== undefined) {
           console.log(`[댓글세탁소] 서버 응답 완료 id=${response.id}`);
 
-          updateLaundryStats({
-            totalScanned: 1,
-            toxicCount: response.isToxic ? 1 : 0,
-          });
+          updateLaundryStats(response.id, response.isToxic);
 
           if (typeof renderCleanResultFromServer === "function") {
             renderCleanResultFromServer(response);
@@ -303,7 +300,9 @@ const commentObserver = new IntersectionObserver(
             if (foundKeywords.length > 0) {
               target.dataset.localSanitizedText = buildServerText(rawText, personalKeywords);
             } else {
-              delete container?.dataset?.localSanitizedText; // 스코프 에러 방지를 위해 옵셔널 체이닝 추가 및 보완 가능
+              if (target && target.dataset) {
+                delete target.dataset.localSanitizedText;
+              }
               const commentSpan = querySelectorWithFallback(target, config.commentSpan, "commentSpan");
               if (commentSpan) commentSpan.textContent = target.dataset.originalText || rawText;
             }

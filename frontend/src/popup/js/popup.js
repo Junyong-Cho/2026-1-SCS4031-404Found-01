@@ -99,7 +99,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // (B) 휘발성 데이터 (session): 실시간 정화 통계
     chrome.storage.session.get(["totalComments", "toxicComments"], (sessionRes) => {
-      updateStatisticsUI(sessionRes.totalComments || 0, sessionRes.toxicComments || 0);
+      console.log("[댓글세탁소] 세션 스토리지 복구 수치:", sessionRes);
+
+      // 변수 바인딩 안전 가드 처리 (|| 대신 ?? 사용으로 가시성 확보)
+      const total = sessionRes.totalComments ?? 0;
+      const toxic = sessionRes.toxicComments ?? 0;
+
+      updateStatisticsUI(total, toxic);
     });
   });
 
@@ -301,7 +307,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     /** [실시간 통계 업데이트] 백그라운드에서 전달받은 새로운 통계 수치를 UI에 반영 */
     if (msg.action === "UPDATE_STATS") {
-      updateStatisticsUI(msg.totalComments, msg.toxicComments);
+      console.log("[댓글세탁소 팝업] 실시간 통계 수신 신호:", msg);
+
+      // 넘겨받은 수치 데이터들을 utils.js의 인자 순서에 맞게 정확히 파싱
+      const total = msg.totalComments ?? 0;
+      const toxic = msg.toxicComments ?? 0;
+
+      updateStatisticsUI(total, toxic);
     }
   });
 });
