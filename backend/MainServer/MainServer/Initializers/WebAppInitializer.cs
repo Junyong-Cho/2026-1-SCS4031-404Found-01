@@ -27,6 +27,14 @@ public static class WebAppInitializer
         app.UseAuthentication();
         app.UseAuthorization();
         app.MapControllers();
+
+        app.UseStaticFiles();
+
+        app.MapGet("/index", async (HttpContext context) =>
+        {
+            context.Response.ContentType = "text/html";
+            await context.Response.SendFileAsync("wwwroot/index.html");
+        });
     }
 
     /// <summary>

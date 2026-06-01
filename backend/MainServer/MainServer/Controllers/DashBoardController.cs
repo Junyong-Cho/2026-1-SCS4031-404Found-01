@@ -4,7 +4,6 @@ using MainServer.Dtos.FromServer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
-using System.Runtime.InteropServices;
 
 namespace MainServer.Controllers;
 
@@ -27,9 +26,11 @@ insert into feedback_tag select @Id, unnest(@Tags);
     const string QUERY_TAGS = "select tag from feedback_tag where feedback_id=@Id";
     const string QUERY_STATUS_STATIC = "select status, count(*) as count from user_feedback group by status";
     const string QUERY_DELETE_FEEDBACK_ALL =
-@"delete from user_feedback;
+@"
+update tags set count = 0;
+delete from user_feedback;
 delete from feedback_tag;
-delete from tags;";
+";
 
     const string QUERY_DELETE_FEEDBACK_ONE =
 @" update tags set count = count - 1 where tag in (select tag from feedback_tag where feedback_id=@Id);
