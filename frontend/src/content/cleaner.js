@@ -79,7 +79,9 @@ export async function applyBlurAndSkeleton(containerEl, config) {
     const lcId = containerEl.getAttribute("data-lc-id") || "no-id";
 
     if (cleanCache.has(lcId)) {
-      renderCleanResult(cleanCache.get(lcId), containerEl, config);
+      const cached = cleanCache.get(lcId);
+      renderCleanResult(cached, containerEl, config);
+      updateLaundryStats(lcId, cached.isToxic);
       return;
     }
 
@@ -327,17 +329,23 @@ export function setupBlurUI(element, container) {
 }
 
 /**
- * 정화 통계 업데이트
+ * 정화 통계 업데이트 (보안 제한 우회를 위해 백그라운드로 요청 위임)
+ * @param {string} lcId - 유튜브 댓글 고유 ID
+ * @param {boolean} isToxic - 악플 여부
  */
-export function updateLaundryStats(stats) {
+export function updateLaundryStats(lcId, isToxic) {
+  if (!lcId) return;
+
+  // 세션 스토리지 접근 권한이 있는 백그라운드로 데이터를 던집니다.
   chrome.runtime.sendMessage(
     {
-      type: "UPDATE_LAUNDRY_STATS",
-      stats: stats,
+      type: "ADD_LAUNDRY_STATS",
+      lcId: lcId,
+      isToxic: isToxic,
     },
-    (response) => {
-      if (chrome.runtime.lastError) {
-      }
+    () => {
+      // 팝업이 닫혀있거나 컨텍스트가 끊겼을 때 발생하는 런타임 에러 방어
+      void chrome.runtime.lastError;
     },
   );
 }
