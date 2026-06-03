@@ -125,6 +125,40 @@
  
 <br>
 
+## 📁 주요 폴더 구조
+
+```text
+📁 2026-1-ccd-404found-01
+├── 📁 ai-model                    # AI 모델 서버 (FastAPI)
+│   ├── 📄 app.py                  
+│   └── 📁 models                  # AI 유해성 탐지 및 순화 엔진
+│       ├── 📄 label_classifier.py  
+│       ├── 📄 refiner_v2.py      
+│       └── 📄 toxic_classifier.py  
+├── 📁 backend                     # 백엔드 메인 서버 (.NET C#)
+│   └── 📁 MainServer/MainServer
+│       ├── 📄 Program.cs        
+│       ├── 📁 Controllers         # 클라이언트 API 요청 처리 핸들러
+│       │   ├── 📄 AuthController.cs           
+│       │   └── 📄 CleaningCommentsController.cs 
+│       └── 📁 Dtos                # 데이터 전송 객체 (Data Transfer Object)
+└── 📁 frontend                    # 크롬 확장 프로그램 (Vite 환경)
+    └── 📁 src                     
+        ├── 📁 background          # 백그라운드 서비스 워커 스크립트
+        │   ├── 📄 auth.js         
+        │   └── 📄 main.js        
+        ├── 📁 content             # 웹페이지(유튜브 DOM) 직접 주입 스크립트
+        │   ├── 📄 cleaner.js     
+        │   └── 📄 injector.js    
+        └── 📁 popup               # 팝업 대시보드 UI 영역
+            ├── 📄 popup.html     
+            └── 📁 js              
+                ├── 📄 keywords.js 
+                └── 📄 popup.js    
+```                
+
+<br>
+
 ## 🚀 설치 및 실행
 
 ### 1. 프로젝트 클론
