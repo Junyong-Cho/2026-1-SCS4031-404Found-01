@@ -92,10 +92,7 @@
 
 ## 🎬 시연 영상
 
-<!-- 시연 영상 링크를 아래에 추가하세요 -->
-> 📎 영상 링크: []
-
-[![시연 영상 썸네일](assets/thumbnail.png)](https://youtube.com/링크를여기에입력)
+> 📎 영상 링크: [https://youtu.be/aTqWEsLKyPY]
 
 <br>
 
