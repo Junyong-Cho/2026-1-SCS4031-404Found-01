@@ -20,7 +20,7 @@ class Refiner:
     async def refine(
         self,
         text: str,
-        labels: Optional[list[str]] = None # 라벨링 결과를 정화기에 넘겨서 hint로 사용할 수 있도록 추가가
+        labels: Optional[list[str]] = None,  # 라벨링 결과를 정화기에 넘겨서 hint로 사용할 수 있도록 추가
     ) -> dict:
         labels = labels or []
         labels_hint = ", ".join(labels) if labels else "없음"
