@@ -6,13 +6,15 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from models.label_classifier import LabelClassifier
-from models.refiner_v2 import Refiner
+from models.refiner_v2 import Refiner, SAFE_MASKING_TEXT
 from models.toxic_classifier import ToxicClassifier
 from models.replacer import (
     load_bad_words,
     replace_bad_words
 )
+from models.PSR_checker import SemanticEvaluator
 
+semantic_evaluator = SemanticEvaluator(threshold=0.5)
 
 load_dotenv()
 
@@ -38,6 +40,74 @@ toxic_classifier = ToxicClassifier(
 bad_words = load_bad_words(
     "models/profanityDict_result_v2.csv"
 )
+
+_SKIP_SEMANTIC_GATE = (
+    "safe_masking",
+    "fallback_raw",
+    "fallback_empty",
+)
+
+
+async def apply_semantic_gate(
+    reference_text: str,
+    labels: list[str],
+    refine_result: dict,
+) -> dict:
+    if semantic_evaluator.evaluate(
+        reference_text,
+        refine_result["refined_text"],
+    )["semantic_pass"]:
+        return refine_result
+
+    second_result = await refiner.refine(
+        text=reference_text,
+        labels=labels,
+    )
+
+    second_process_type = second_result.get(
+        "process_type",
+        "llm_refinement",
+    )
+
+    if second_process_type in _SKIP_SEMANTIC_GATE:
+        return second_result
+
+    if semantic_evaluator.evaluate(
+        reference_text,
+        second_result["refined_text"],
+    )["semantic_pass"]:
+        return second_result
+
+    return {
+        "original_text": reference_text,
+        "refined_text": SAFE_MASKING_TEXT,
+        "process_type": "safe_masking",
+        "mask_reason": "semantic_similarity_failed",
+    }
+
+
+async def refine_toxic_comment(
+    reference_text: str,
+    labels: list[str],
+) -> dict:
+    refine_result = await refiner.refine(
+        text=reference_text,
+        labels=labels,
+    )
+
+    process_type = refine_result.get(
+        "process_type",
+        "llm_refinement",
+    )
+
+    if process_type in _SKIP_SEMANTIC_GATE:
+        return refine_result
+
+    return await apply_semantic_gate(
+        reference_text,
+        labels,
+        refine_result,
+    )
 
 
 async def refine_comment(comment: str):
@@ -101,12 +171,12 @@ async def refine_comment(comment: str):
             "simple_profanity_llm_replacement"
         )
 
-    # 그 외 toxic → 치환된 댓글을 Refiner 입력으로 정화
+    # 그 외 toxic → 치환된 댓글을 Refiner 입력으로 정화 + 의미 유사도 검사
     elif len(labels) > 0:
 
-        final_result = await refiner.refine(
-            replaced_comment,
-            labels
+        final_result = await refine_toxic_comment(
+            reference_text=replaced_comment,
+            labels=labels,
         )
 
         final_result["original_text"] = comment
@@ -120,9 +190,9 @@ async def refine_comment(comment: str):
     # 라벨링 실패 fallback
     else:
 
-        final_result = await refiner.refine(
-            replaced_comment,
-            labels
+        final_result = await refine_toxic_comment(
+            reference_text=replaced_comment,
+            labels=labels,
         )
 
         final_result["original_text"] = comment
@@ -154,32 +224,19 @@ async def main():
 
     # 테스트용
     test_comments = [
-        "너네나라가! 탄김치야!",
+        "그런 개나 소를 죄다 공기업 정규직 전환시켜버린 전 정부ㅠㅠ",
+        # "똥양인들은 인종 개량해라. 시급하다.",
+        # "너네나라가! 탄김치야!",
         "그래봤자 늙은 할머니 짱깨",
-        "개독과 미친x 목둥이가 답",
+        # "개독과 미친x 목둥이가 답",
         "돼지가 삶은 소대가리가 웃겠다며 빠져라 하지 않았나??돼지가 노할텐데~",
         "좌좀 홍어들이 일베보다 더 극혐이다",
-        "ㅋㅋ 떡잎부터 한남새기들 다 거세시켜라",
-        "그러니 짱개헥히라고 부르는거여 정신뱅자 멸족들아",
-        "저 코리안 황인종 화상들~~ 니미 뭐하러 백인들 성지에 가서 빙신취급받고 다니냐??",
         "열폭 돼지녀들 출동!!!",
-        "진짜 흑자같은 사람이 있어야해, 이 시대엔 사기꾼들이 너무 많아",
-        "0:08 죽일 생각까지는 없었는데...",
-        "진짜 흑자같은 사람이 있어야해, 이 시대엔 사기꾼들이 너무 많아",
-        "아니 콘텐츠담당관 또 너야!",
-        "팔로알토 보고 온 사람 개추 ㅋㅋ",
-        "ㅋㅋ 아무래도 용 필 믿는 소수의 지지자들은 능지가..",
-        "무슨 악마를 보았다 보는 줄 알았네 ㅋㅋㅋㅋㅋㅋㅋ “누구 다리에 걸려서 넘어진 거 같은데?” 하면서 씩 웃는 거 개소름 ㅋㅋㅋㅋㅋ 사패인가",
-        # "하여튼 방구석 아낙들 일이란 왜 이리도 한심하기 짝이 없을까? ㅉㅉ 줌탱들 가십거리하나 늘었다고 신났네 남편애들저녁은 하고 댓글달고 있는건지",
-        # "와 이거 완전 재앙이네. 깨끗한 나라 만든다면서 왜 이런 사건이 터지냐??",
-        # "몬생긴 여자인간들은 찌그러져있어라 확그냥 막그냥",
-        # "오면 화염병 던진다 돼지새키야",
-        # "수꼴틀딱시키들이 다 디져야 나라가 똑바로 될것같다..답이 없는 종자들ㅠ",
-        # "ㅇㅇ? 양놈이건 깜씨건 뭔 아방가르드하네",
-        # "OOO천지 개독교 새끼들아 다 착해져라!",
-        # "다들 오지랖 좀...되게 할 짓 없어보여요",
-        # "연기못하는 방구쟁이년",
-        # "뚱보끼린 뭔가 잘맞는게 있나보네",
+        # "진짜 흑자같은 사람이 있어야해, 이 시대엔 사기꾼들이 너무 많아",
+        # "0:08 죽일 생각까지는 없었는데...",
+        # "진짜 흑자같은 사람이 있어야해, 이 시대엔 사기꾼들이 너무 많아",
+        # "아니 콘텐츠담당관 또 너야!",
+        # "팔로알토 보고 온 사람 개추 ㅋㅋ",
         # "씨발",
     ]
 
